@@ -4,7 +4,7 @@ export default function Calls(root) {
     <section class="page-head">
       <h1 class="page-title">Call Campaigns</h1>
       <div style="display:flex; justify-content:right; margin-top:10px;">
-        <a class="btn-add" href="#/create-calls" style="color:black">New Campaign</a>
+        <a class="btn-add" href="#/create-calls" style="color:black; text-decoration:none;">New Campaign</a>
       </div>
     </section>
 
@@ -41,6 +41,8 @@ export default function Calls(root) {
 
   function renderCampaigns(list) {
     const mount = root.querySelector('#calls-list');
+    if (!mount) return; // guard against missing container
+
     if (!list.length) {
       mount.innerHTML = `
         <div class="card wide">
@@ -52,26 +54,46 @@ export default function Calls(root) {
         </div>`;
       return;
     }
+
     mount.innerHTML = list.map(renderWideCard).join('');
 
-    mount.addEventListener('click', async (e) => {
-      const btn = e.target.closest('button[data-del]');
-      if (!btn) return;
-      const id = btn.getAttribute('data-del');
-      if (!id) return;
-      if (!confirm('Delete this campaign? This cannot be undone.')) return;
-      const ok = await deleteCampaign(id);
-      if (ok) {
-        btn.closest('.card.wide')?.remove();
-        const n = mount.querySelectorAll('.card.wide').length;
-        updateStat('#stat-active-campaigns .big', n);
-      } else {
-        alert('Failed to delete. Please try again.');
+    // 🔁 All click handling stays scoped here so `mount` exists
+    mount.onclick = async (e) => {
+      // Start Calling
+      const start = e.target.closest('[data-start]');
+      if (start) {
+        const id = start.getAttribute('data-start');
+        if (id) location.hash = `#/call-execution/${encodeURIComponent(id)}`;
+        return;
       }
-    });
+
+      // Edit Workflow
+      const wf = e.target.closest('[data-workflow]');
+      if (wf) {
+        const id = wf.getAttribute('data-workflow');
+        if (id) location.hash = `#/workflow?campaign=${encodeURIComponent(id)}`;
+        return;
+      }
+
+      // Delete Campaign
+      const btn = e.target.closest('button[data-del]');
+      if (btn) {
+        const id = btn.getAttribute('data-del');
+        if (!id) return;
+        if (!confirm('Delete this campaign? This cannot be undone.')) return;
+        const ok = await deleteCampaign(id);
+        if (ok) {
+          btn.closest('.card.wide')?.remove();
+          const n = mount.querySelectorAll('.card.wide').length;
+          updateStat('#stat-active-campaigns .big', n);
+        } else {
+          alert('Failed to delete. Please try again.');
+        }
+      }
+    };
   }
 
-  // ✅ Replace renderWideCard in calls.js
+  // Card renderer
   function renderWideCard(c) {
     const idShort = (c.campaign_id || '').toString().slice(0, 8);
     const qCount = Array.isArray(c.survey_questions) ? c.survey_questions.length : 0;
@@ -106,37 +128,6 @@ export default function Calls(root) {
     `;
   }
 
-  // ✅ Enhance the click listener on #calls-list in calls.js
-  mount.addEventListener('click', async (e) => {
-    const start = e.target.closest('[data-start]');
-    if (start) {
-      const id = start.getAttribute('data-start');
-      // navigate to your call execution route
-      location.hash = `#/call-execution/${encodeURIComponent(id)}`;
-      return;
-    }
-    const wf = e.target.closest('[data-workflow]');
-    if (wf) {
-      const id = wf.getAttribute('data-workflow');
-      location.hash = `#/workflow?campaign=${encodeURIComponent(id)}`;
-      return;
-    }
-    const btn = e.target.closest('button[data-del]');
-    if (!btn) return;
-    const id = btn.getAttribute('data-del');
-    if (!id) return;
-    if (!confirm('Delete this campaign? This cannot be undone.')) return;
-    const ok = await deleteCampaign(id);
-    if (ok) {
-      btn.closest('.card.wide')?.remove();
-      const n = mount.querySelectorAll('.card.wide').length;
-      updateStat('#stat-active-campaigns .big', n);
-    } else {
-      alert('Failed to delete. Please try again.');
-    }
-  });
-
-
   async function fetchCampaigns() {
     if (globalThis.supabase?.from) {
       const { data, error } = await supabase
@@ -149,6 +140,7 @@ export default function Calls(root) {
         return { campaigns: data, activeCampaigns: act };
       }
     }
+    // demo fallback
     const demo = [
       {
         campaign_id: crypto.randomUUID(),
