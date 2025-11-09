@@ -1,258 +1,210 @@
-// screens/create_calls.js
-import { upsertCampaignDraft, fetchContacts as dbFetchContacts } from '../functions/db.js';
-import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
-
-export default function CreateCalls(root) {
+// screens/calls.js
+export default function Calls(root) {
   root.innerHTML = `
-    <style>
-      /* Force all cards to white to match your current theme ask */
-      .card, .card.wide { background: #ffffff !important; }
-      .select-pill {
-        appearance: none;
-        border: 1px solid rgba(0,0,0,.12);
-        border-radius: 12px;
-        padding: 10px 12px;
-        font-weight: 700;
-        letter-spacing: .2px;
-        background: var(--lg-bg);
-        backdrop-filter: blur(calc(var(--lg-blur)*.6)) saturate(var(--lg-sat));
-        -webkit-backdrop-filter: blur(calc(var(--lg-blur)*.6)) saturate(var(--lg-sat));
-      }
-    </style>
-
     <section class="page-head">
-      <h1 class="page-title">Create Call Campaign</h1>
+      <h1 class="page-title">Call Campaigns</h1>
+      <div style="display:flex; justify-content:right; margin-top:10px;">
+        <a class="btn-add" href="#/create-calls" style="color:black; text-decoration:none;">New Campaign</a>
+      </div>
     </section>
 
-    <!-- Campaign name -->
-    <div class="cards" style="margin-bottom:14px">
-      <div class="card" style="grid-column:span 12;">
-        <div class="kicker">Campaign</div>
-        <label class="label" style="display:block;margin-top:8px;">Campaign name</label>
-        <input id="cc-name" type="text" placeholder="e.g., STEM Night RSVPs"
-               style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(0,0,0,.12);">
+    <section id="calls-stats" class="cards" style="margin-bottom:14px">
+      <div class="card" id="stat-total-calls">
+        <div class="kicker">Engagement</div>
+        <div class="big">—</div>
+        <div class="label">Total calls made</div>
       </div>
-    </div>
-
-    <!-- Step 1: Filter Contacts (dropdown-driven) -->
-    <div class="card wide">
-      <div style="flex:1;min-width:0">
-        <div class="kicker">Step 1</div>
-        <div class="big" style="margin-bottom:6px">Filter Contacts</div>
-
-        <!-- Dynamic dropdown filter UI -->
-        <div id="cc-filter-ui" class="latest-row" style="margin-top:8px;gap:10px;flex-wrap:wrap"></div>
-
-        <!-- Actions -->
-        <div class="latest-row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
-          <button id="cc-run-filter" class="btn-glass">Run Filter</button>
-          <button id="cc-select-all" class="btn-glass">Select All</button>
-          <span class="badge" id="cc-count">Selected: 0</span>
-        </div>
-
-        <div id="cc-results" class="cards" style="margin-top:12px;"></div>
+      <div class="card" id="stat-active-campaigns">
+        <div class="kicker">Calls</div>
+        <div class="big">—</div>
+        <div class="label">Active campaigns</div>
       </div>
-    </div>
+    </section>
 
-    <!-- Step 2: Survey -->
-    <div class="card wide" style="margin-top:14px">
-      <div style="flex:1;min-width:0">
-        <div class="kicker">Step 2</div>
-        <div class="big" style="margin-bottom:6px">Survey Questions & Options</div>
-
-        <div class="label" style="margin-top:8px">Questions</div>
-        <div id="cc-questions"></div>
-        <button id="cc-add-q" class="btn-add" style="margin-top:8px">+ Add Question</button>
-
-        <div class="label" style="margin-top:18px">Answer Options (global)</div>
-        <div id="cc-options"></div>
-        <button id="cc-add-opt" class="btn-add" style="margin-top:8px">+ Add Option</button>
-
-        <!-- Centered Workflow Button -->
-        <div style="width:100%;display:flex;justify-content:center;margin-top:28px;">
-          <button id="cc-design-workflow" class="btn-add">
-            Design Workflow
-          </button>
-        </div>
-      </div>
-    </div>
+    <section id="calls-list" class="cards"></section>
   `;
 
-  // ---------- State ----------
-  const selected = new Set();
-  let questions = ['Can you attend this event?'];
-  let options   = ['Yes','No','Maybe'];
+  init();
 
-  // ---------- Build filter dropdowns ----------
-  // Mounts a "Field" select and a "Value" select, using distinct values from Supabase
-  mountContactFilters(root.querySelector('#cc-filter-ui'));
-
-  // ---------- Wire controls ----------
-  root.querySelector('#cc-run-filter')?.addEventListener('click', runFilter);
-  root.querySelector('#cc-select-all')?.addEventListener('click', () => {
-    const boxes = root.querySelectorAll('input[data-contact-id]');
-    boxes.forEach(b => { b.checked = true; selected.add(b.getAttribute('data-contact-id')); });
-    updateSelectedBadge();
-  });
-
-  // Workflow button: save campaign draft then route to designer
-  root.querySelector('#cc-design-workflow')?.addEventListener('click', onDesignWorkflow);
-
-  // Survey editors
-  root.querySelector('#cc-add-q')?.addEventListener('click', () => { questions.push(''); renderQuestions(); });
-  root.querySelector('#cc-add-opt')?.addEventListener('click', () => { options.push(''); renderOptions(); });
-
-  // Initial render
-  renderQuestions();
-  renderOptions();
-
-  // ---------- Functions ----------
-  async function onDesignWorkflow() {
-    try {
-      const campaign_id = crypto.randomUUID();
-      const name = root.querySelector('#cc-name')?.value?.trim() || 'Untitled Campaign';
-
-      // Selected contacts from current result list
-      const student_ids = Array.from(root.querySelectorAll('input[data-contact-id]:checked'))
-        .map(b => b.getAttribute('data-contact-id'));
-
-      // Clean Qs/Opts
-      const qs = (Array.isArray(questions) ? questions : []).map(q => String(q || '').trim()).filter(Boolean);
-      const os = (Array.isArray(options)   ? options   : []).map(o => String(o || '').trim()).filter(Boolean);
-
-      // Snapshot chosen dropdown filter for persistence
-      const activeFilter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, value } or null
-      const filtersPayload = activeFilter ? { [activeFilter.field]: activeFilter.value } : null;
-
-      await upsertCampaignDraft({
-        campaign_id,
-        campaign_name: name,
-        filters: filtersPayload,
-        student_ids,
-        dates: null,
-        survey_questions: qs,
-        survey_options: os,
-        workflow: null
-      });
-
-      location.hash = `#/workflow?campaign=${encodeURIComponent(campaign_id)}`;
-    } catch (e) {
-      console.error('Failed to create draft campaign:', e);
-      alert('Could not create campaign draft. Please try again.');
-    }
+  async function init() {
+    const { campaigns, activeCampaigns } = await fetchCampaigns();
+    const totalCalls = await fetchTotalCalls();
+    updateStat('#stat-total-calls .big', totalCalls);
+    updateStat('#stat-active-campaigns .big', activeCampaigns.length);
+    renderCampaigns(activeCampaigns);
   }
 
-  async function runFilter() {
-    const filter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, value } or null
-    const filters = {}; // compatible with dbFetchContacts signature
-
-    // Ask DB for rows (db helper may use ILIKE; we’ll post-filter below if a strict dropdown was chosen)
-    let rows = await dbFetchContacts(filters);
-
-    if (filter && filter.field && filter.value != null && filter.value !== '') {
-      // Strict client-side post-filter to the EXACT selected value
-      rows = rows.filter(r => {
-        const v = (r[filter.field] ?? '').toString();
-        return v === filter.value;
-      });
-    }
-
-    renderResults(rows);
+  function updateStat(sel, val) {
+    const el = root.querySelector(sel);
+    if (el) el.textContent = Number.isFinite(val) ? val.toLocaleString() : '—';
   }
 
-  function renderQuestions() {
-    const mount = root.querySelector('#cc-questions');
-    mount.innerHTML = questions.map((q, i) => `
-      <div class="latest-row" style="gap:8px;margin-top:8px">
-        <input data-q="${i}" value="${escapeHtml(q)}" placeholder="Question text"
-               style="flex:1;padding:8px;border-radius:10px;border:1px solid rgba(0,0,0,.12);">
-        <button class="btn-delete" data-q-del="${i}">Remove</button>
-      </div>
-    `).join('') || `<p class="label">No questions yet — add one.</p>`;
+  function renderCampaigns(list) {
+    const mount = root.querySelector('#calls-list');
+    if (!mount) return; // guard against missing container
 
-    mount.oninput = (e) => {
-      const inp = e.target.closest('input[data-q]');
-      if (!inp) return;
-      const idx = Number(inp.getAttribute('data-q'));
-      questions[idx] = inp.value;
-    };
-    mount.onclick = (e) => {
-      const del = e.target.closest('button[data-q-del]');
-      if (!del) return;
-      const idx = Number(del.getAttribute('data-q-del'));
-      questions.splice(idx, 1);
-      renderQuestions();
-    };
-  }
-
-  function renderOptions() {
-    const mount = root.querySelector('#cc-options');
-    mount.innerHTML = options.map((opt, i) => `
-      <div class="latest-row" style="gap:8px;margin-top:8px">
-        <input data-opt="${i}" value="${escapeHtml(opt)}" placeholder="Option text"
-               style="flex:1;padding:8px;border-radius:10px;border:1px solid rgba(0,0,0,.12);">
-        <button class="btn-delete" data-opt-del="${i}">Remove</button>
-      </div>
-    `).join('') || `<p class="label">No options yet — add one.</p>`;
-
-    mount.oninput = (e) => {
-      const inp = e.target.closest('input[data-opt]');
-      if (!inp) return;
-      const idx = Number(inp.getAttribute('data-opt'));
-      options[idx] = inp.value;
-    };
-    mount.onclick = (e) => {
-      const del = e.target.closest('button[data-opt-del]');
-      if (!del) return;
-      const idx = Number(del.getAttribute('data-opt-del'));
-      options.splice(idx, 1);
-      renderOptions();
-    };
-  }
-
-  function renderResults(rows) {
-    const mount = root.querySelector('#cc-results');
-    if (!rows.length) {
+    if (!list.length) {
       mount.innerHTML = `
-        <div class="card" style="grid-column:span 12;">
-          <div class="kicker">Contacts</div>
-          <div class="big" style="margin-bottom:6px">No matches</div>
-          <p class="label">Try a different filter.</p>
+        <div class="card wide">
+          <div>
+            <div class="kicker">No active campaigns</div>
+            <div class="big" style="margin-bottom:6px">You're all caught up</div>
+            <p class="label">Create a new campaign to get started.</p>
+          </div>
         </div>`;
       return;
     }
 
-    mount.innerHTML = rows.map(row => `
-      <div class="card" style="grid-column:span 6;">
-        <div class="card-header" style="justify-content:space-between">
-          <div>
-            <div class="big" style="font-size:18px">${escapeHtml(row.contact_first || '')} ${escapeHtml(row.contact_last || '')}</div>
-            <div class="label">${escapeHtml(row.contact_email || '—')} • ${escapeHtml(row.contact_phone || '—')}</div>
-          </div>
-          <div>
-            <label class="label" style="display:flex;align-items:center;gap:8px">
-              <input type="checkbox" data-contact-id="${row.contact_id}">
-              Select
-            </label>
-          </div>
-        </div>
-      </div>
-    `).join('');
+    mount.innerHTML = list.map(renderWideCard).join('');
 
-    mount.onchange = (e) => {
-      const box = e.target.closest('input[data-contact-id]');
-      if (!box) return;
-      const id = box.getAttribute('data-contact-id');
-      if (box.checked) selected.add(id); else selected.delete(id);
-      updateSelectedBadge();
+    // 🔁 All click handling stays scoped here so `mount` exists
+    mount.onclick = async (e) => {
+      // Start Calling
+      const start = e.target.closest('[data-start]');
+      if (start) {
+        const id = start.getAttribute('data-start');
+        if (id) location.hash = `#/call-execution/${encodeURIComponent(id)}`;
+        return;
+      }
+
+      // Edit Workflow
+      const wf = e.target.closest('[data-workflow]');
+      if (wf) {
+        const id = wf.getAttribute('data-workflow');
+        if (id) location.hash = `#/workflow?campaign=${encodeURIComponent(id)}`;
+        return;
+      }
+
+      // Delete Campaign
+      const btn = e.target.closest('button[data-del]');
+      if (btn) {
+        const id = btn.getAttribute('data-del');
+        if (!id) return;
+        if (!confirm('Delete this campaign? This cannot be undone.')) return;
+        const ok = await deleteCampaign(id);
+        if (ok) {
+          btn.closest('.card.wide')?.remove();
+          const n = mount.querySelectorAll('.card.wide').length;
+          updateStat('#stat-active-campaigns .big', n);
+        } else {
+          alert('Failed to delete. Please try again.');
+        }
+      }
     };
   }
 
-  function updateSelectedBadge() {
-    const badge = root.querySelector('#cc-count');
-    if (badge) badge.textContent = `Selected: ${selected.size}`;
+  // Card renderer
+  function renderWideCard(c) {
+    const idShort = (c.campaign_id || '').toString().slice(0, 8);
+    const qCount = Array.isArray(c.survey_questions) ? c.survey_questions.length : 0;
+    const oCount = Array.isArray(c.survey_options) ? c.survey_options.length : 0;
+    const recipients = Array.isArray(c.student_ids) ? c.student_ids.length : (c.recipient_count ?? 0);
+    const updatedStr = formatRelative(c.updated_at);
+    const createdStr = formatShortDate(c.created_at);
+
+    return `
+      <div class="card wide">
+        <div style="flex:1; min-width:0">
+          <div class="kicker">Campaign</div>
+          <div class="big" style="margin-bottom:6px">${escapeHtml(c.campaign_name || 'Untitled Campaign')}</div>
+          <div class="latest-row" style="gap:8px; flex-wrap:wrap">
+            <span class="badge">ID: ${idShort}…</span>
+            <span class="badge">Questions: ${qCount}</span>
+            <span class="badge">Options: ${oCount}</span>
+            <span class="badge">Recipients: ${recipients}</span>
+            ${c.workflow ? `<span class="badge">Workflow ✓</span>` : `<span class="badge">No workflow</span>`}
+          </div>
+          <p class="label" style="margin-top:8px">
+            Updated ${updatedStr} • Created ${createdStr}
+          </p>
+        </div>
+
+        <div style="display:flex; align-items:flex-start; gap:8px;">
+          <a class="btn-add" data-start="${c.campaign_id}" style="text-decoration:none;">Start Calling</a>
+          <button class="btn-glass" data-workflow="${c.campaign_id}">Edit Workflow</button>
+          <button class="btn-delete" data-del="${c.campaign_id}">Delete</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function fetchCampaigns() {
+    if (globalThis.supabase?.from) {
+      const { data, error } = await supabase
+        .from('call_campaigns')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      if (!error && Array.isArray(data)) {
+        const now = new Date();
+        const act = data.filter((c) => isActive(c, now));
+        return { campaigns: data, activeCampaigns: act };
+      }
+    }
+    // demo fallback
+    const demo = [
+      {
+        campaign_id: crypto.randomUUID(),
+        campaign_name: 'STEM Night RSVPs',
+        filters: { interest: 'STEM' },
+        student_ids: Array.from({ length: 92 }, () => crypto.randomUUID()),
+        dates: { start: '2025-11-01T19:00:00Z', end: '2025-11-08T19:00:00Z' },
+        created_at: '2025-11-01T18:03:00Z',
+        survey_questions: ['Can you attend this event?'],
+        survey_options: ['Yes','No','Maybe'],
+        updated_at: '2025-11-07T22:17:00Z',
+      },
+      {
+        campaign_id: crypto.randomUUID(),
+        campaign_name: 'Fall Outreach — Seniors',
+        filters: { grade: 12 },
+        student_ids: Array.from({ length: 180 }, () => crypto.randomUUID()),
+        dates: { start: '2025-10-12T17:00:00Z', end: '2025-11-20T17:00:00Z' },
+        created_at: '2025-10-10T21:12:00Z',
+        survey_questions: ['Will you attend tutoring?'],
+        survey_options: ['Yes','No','Maybe'],
+        updated_at: '2025-11-05T19:44:00Z',
+      },
+    ];
+    const now = new Date();
+    return { campaigns: demo, activeCampaigns: demo.filter((c) => isActive(c, now)) };
+  }
+
+  function isActive(c, now = new Date()) {
+    const end = c?.dates?.end ? new Date(c.dates.end) : null;
+    return !end || end.getTime() >= now.getTime();
+  }
+
+  async function fetchTotalCalls() {
+    if (globalThis.supabase?.from) {
+      const { count, error } = await supabase
+        .from('call_progress')
+        .select('*', { count: 'exact', head: true });
+      if (!error && Number.isFinite(count)) return count;
+    }
+    return 92 + 180; // demo
+  }
+
+  async function deleteCampaign(campaignId) {
+    if (!campaignId) return false;
+    if (globalThis.supabase?.from) {
+      const { error } = await supabase.from('call_campaigns').delete().eq('campaign_id', campaignId);
+      return !error;
+    }
+    return true;
   }
 }
 
-// Escape util
+function formatShortDate(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d) ? '—' : d.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+}
+function formatRelative(iso) {
+  const d = new Date(iso); if (Number.isNaN(d)) return '—';
+  const mins = Math.round((Date.now() - d) / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return `${days}d ago`;
+}
 function escapeHtml(s=''){return s.replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}

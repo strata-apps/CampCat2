@@ -1,10 +1,22 @@
 // screens/create_calls.js
+import { upsertCampaignDraft, fetchContacts as dbFetchContacts } from '../functions/db.js';
+import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
+
 export default function CreateCalls(root) {
   root.innerHTML = `
     <style>
-      /* Force all cards to white */
-      .card, .card.wide {
-        background: #ffffff !important;
+      /* Force all cards to white to match your current theme ask */
+      .card, .card.wide { background: #ffffff !important; }
+      .select-pill {
+        appearance: none;
+        border: 1px solid rgba(0,0,0,.12);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-weight: 700;
+        letter-spacing: .2px;
+        background: var(--lg-bg);
+        backdrop-filter: blur(calc(var(--lg-blur)*.6)) saturate(var(--lg-sat));
+        -webkit-backdrop-filter: blur(calc(var(--lg-blur)*.6)) saturate(var(--lg-sat));
       }
     </style>
 
@@ -12,8 +24,9 @@ export default function CreateCalls(root) {
       <h1 class="page-title">Create Call Campaign</h1>
     </section>
 
+    <!-- Campaign name -->
     <div class="cards" style="margin-bottom:14px">
-      <div class="card" style="grid-column:span 12;background:#fff">
+      <div class="card" style="grid-column:span 12;">
         <div class="kicker">Campaign</div>
         <label class="label" style="display:block;margin-top:8px;">Campaign name</label>
         <input id="cc-name" type="text" placeholder="e.g., STEM Night RSVPs"
@@ -21,17 +34,17 @@ export default function CreateCalls(root) {
       </div>
     </div>
 
-    <!-- Step 1: Filter Contacts -->
-    <div class="card wide" style="background:#fff">
+    <!-- Step 1: Filter Contacts (dropdown-driven) -->
+    <div class="card wide">
       <div style="flex:1;min-width:0">
         <div class="kicker">Step 1</div>
         <div class="big" style="margin-bottom:6px">Filter Contacts</div>
 
-        <div class="latest-row" style="margin-top:8px;gap:10px;flex-wrap:wrap">
-          <input id="cc-first"  placeholder="First name contains"  style="padding:8px;border-radius:10px;border:1px solid rgba(0,0,0,.12);">
-          <input id="cc-last"   placeholder="Last name contains"   style="padding:8px;border-radius:10px;border:1px solid rgba(0,0,0,.12);">
-          <input id="cc-email"  placeholder="Email contains"       style="padding:8px;border-radius:10px;border:1px solid rgba(0,0,0,.12);">
-          <input id="cc-phone"  placeholder="Phone contains"       style="padding:8px;border-radius:10px;border:1px solid rgba(0,0,0,.12);">
+        <!-- Dynamic dropdown filter UI -->
+        <div id="cc-filter-ui" class="latest-row" style="margin-top:8px;gap:10px;flex-wrap:wrap"></div>
+
+        <!-- Actions -->
+        <div class="latest-row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
           <button id="cc-run-filter" class="btn-glass">Run Filter</button>
           <button id="cc-select-all" class="btn-glass">Select All</button>
           <span class="badge" id="cc-count">Selected: 0</span>
@@ -42,7 +55,7 @@ export default function CreateCalls(root) {
     </div>
 
     <!-- Step 2: Survey -->
-    <div class="card wide" style="margin-top:14px;background:#fff">
+    <div class="card wide" style="margin-top:14px">
       <div style="flex:1;min-width:0">
         <div class="kicker">Step 2</div>
         <div class="big" style="margin-bottom:6px">Survey Questions & Options</div>
@@ -55,7 +68,7 @@ export default function CreateCalls(root) {
         <div id="cc-options"></div>
         <button id="cc-add-opt" class="btn-add" style="margin-top:8px">+ Add Option</button>
 
-        <!-- ✅ New Centered Workflow Button -->
+        <!-- Centered Workflow Button -->
         <div style="width:100%;display:flex;justify-content:center;margin-top:28px;">
           <button id="cc-design-workflow" class="btn-add">
             Design Workflow
@@ -65,17 +78,16 @@ export default function CreateCalls(root) {
     </div>
   `;
 
-  // State
-  const selected = new Set();  
-  const filters = { contact_first:'', contact_last:'', contact_email:'', contact_phone:'' };
+  // ---------- State ----------
+  const selected = new Set();
   let questions = ['Can you attend this event?'];
   let options   = ['Yes','No','Maybe'];
 
-  // Build default UI
-  renderQuestions();
-  renderOptions();
+  // ---------- Build filter dropdowns ----------
+  // Mounts a "Field" select and a "Value" select, using distinct values from Supabase
+  mountContactFilters(root.querySelector('#cc-filter-ui'));
 
-  // Wire filtering controls
+  // ---------- Wire controls ----------
   root.querySelector('#cc-run-filter')?.addEventListener('click', runFilter);
   root.querySelector('#cc-select-all')?.addEventListener('click', () => {
     const boxes = root.querySelectorAll('input[data-contact-id]');
@@ -83,25 +95,35 @@ export default function CreateCalls(root) {
     updateSelectedBadge();
   });
 
-  // ✅ New workflow button handler
-  // ✅ Replace your existing cc-design-workflow click handler in create_calls.js
-  root.querySelector('#cc-design-workflow')?.addEventListener('click', async () => {
+  // Workflow button: save campaign draft then route to designer
+  root.querySelector('#cc-design-workflow')?.addEventListener('click', onDesignWorkflow);
+
+  // Survey editors
+  root.querySelector('#cc-add-q')?.addEventListener('click', () => { questions.push(''); renderQuestions(); });
+  root.querySelector('#cc-add-opt')?.addEventListener('click', () => { options.push(''); renderOptions(); });
+
+  // Initial render
+  renderQuestions();
+  renderOptions();
+
+  // ---------- Functions ----------
+  async function onDesignWorkflow() {
     try {
       const campaign_id = crypto.randomUUID();
       const name = root.querySelector('#cc-name')?.value?.trim() || 'Untitled Campaign';
 
-      // Build the selected contacts array
+      // Selected contacts from current result list
       const student_ids = Array.from(root.querySelectorAll('input[data-contact-id]:checked'))
         .map(b => b.getAttribute('data-contact-id'));
 
-      // Clean questions/options
+      // Clean Qs/Opts
       const qs = (Array.isArray(questions) ? questions : []).map(q => String(q || '').trim()).filter(Boolean);
       const os = (Array.isArray(options)   ? options   : []).map(o => String(o || '').trim()).filter(Boolean);
 
-      // Build filters snapshot
-      const filtersPayload = readFilters(root);
+      // Snapshot chosen dropdown filter for persistence
+      const activeFilter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, value } or null
+      const filtersPayload = activeFilter ? { [activeFilter.field]: activeFilter.value } : null;
 
-      // Upsert draft campaign to Supabase
       await upsertCampaignDraft({
         campaign_id,
         campaign_name: name,
@@ -113,18 +135,30 @@ export default function CreateCalls(root) {
         workflow: null
       });
 
-      // Route to workflow with id
       location.hash = `#/workflow?campaign=${encodeURIComponent(campaign_id)}`;
     } catch (e) {
       console.error('Failed to create draft campaign:', e);
       alert('Could not create campaign draft. Please try again.');
     }
-  });
+  }
 
+  async function runFilter() {
+    const filter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, value } or null
+    const filters = {}; // compatible with dbFetchContacts signature
 
-  // Add question/option
-  root.querySelector('#cc-add-q')?.addEventListener('click', () => { questions.push(''); renderQuestions(); });
-  root.querySelector('#cc-add-opt')?.addEventListener('click', () => { options.push(''); renderOptions(); });
+    // Ask DB for rows (db helper may use ILIKE; we’ll post-filter below if a strict dropdown was chosen)
+    let rows = await dbFetchContacts(filters);
+
+    if (filter && filter.field && filter.value != null && filter.value !== '') {
+      // Strict client-side post-filter to the EXACT selected value
+      rows = rows.filter(r => {
+        const v = (r[filter.field] ?? '').toString();
+        return v === filter.value;
+      });
+    }
+
+    renderResults(rows);
+  }
 
   function renderQuestions() {
     const mount = root.querySelector('#cc-questions');
@@ -136,19 +170,19 @@ export default function CreateCalls(root) {
       </div>
     `).join('') || `<p class="label">No questions yet — add one.</p>`;
 
-    mount.addEventListener('input', (e) => {
+    mount.oninput = (e) => {
       const inp = e.target.closest('input[data-q]');
       if (!inp) return;
       const idx = Number(inp.getAttribute('data-q'));
       questions[idx] = inp.value;
-    });
-    mount.addEventListener('click', (e) => {
+    };
+    mount.onclick = (e) => {
       const del = e.target.closest('button[data-q-del]');
       if (!del) return;
       const idx = Number(del.getAttribute('data-q-del'));
       questions.splice(idx, 1);
       renderQuestions();
-    });
+    };
   }
 
   function renderOptions() {
@@ -161,45 +195,35 @@ export default function CreateCalls(root) {
       </div>
     `).join('') || `<p class="label">No options yet — add one.</p>`;
 
-    mount.addEventListener('input', (e) => {
+    mount.oninput = (e) => {
       const inp = e.target.closest('input[data-opt]');
       if (!inp) return;
       const idx = Number(inp.getAttribute('data-opt'));
       options[idx] = inp.value;
-    });
-    mount.addEventListener('click', (e) => {
+    };
+    mount.onclick = (e) => {
       const del = e.target.closest('button[data-opt-del]');
       if (!del) return;
       const idx = Number(del.getAttribute('data-opt-del'));
       options.splice(idx, 1);
       renderOptions();
-    });
-  }
-
-  async function runFilter() {
-    filters.contact_first = root.querySelector('#cc-first')?.value?.trim() ?? '';
-    filters.contact_last  = root.querySelector('#cc-last')?.value?.trim() ?? '';
-    filters.contact_email = root.querySelector('#cc-email')?.value?.trim() ?? '';
-    filters.contact_phone = root.querySelector('#cc-phone')?.value?.trim() ?? '';
-
-    const results = await fetchContacts(filters);
-    renderResults(results);
+    };
   }
 
   function renderResults(rows) {
     const mount = root.querySelector('#cc-results');
     if (!rows.length) {
       mount.innerHTML = `
-        <div class="card" style="grid-column:span 12;background:#fff">
+        <div class="card" style="grid-column:span 12;">
           <div class="kicker">Contacts</div>
           <div class="big" style="margin-bottom:6px">No matches</div>
-          <p class="label">Try widening your filters.</p>
+          <p class="label">Try a different filter.</p>
         </div>`;
       return;
     }
 
     mount.innerHTML = rows.map(row => `
-      <div class="card" style="grid-column:span 6;background:#fff">
+      <div class="card" style="grid-column:span 6;">
         <div class="card-header" style="justify-content:space-between">
           <div>
             <div class="big" style="font-size:18px">${escapeHtml(row.contact_first || '')} ${escapeHtml(row.contact_last || '')}</div>
@@ -215,13 +239,13 @@ export default function CreateCalls(root) {
       </div>
     `).join('');
 
-    mount.addEventListener('change', (e) => {
+    mount.onchange = (e) => {
       const box = e.target.closest('input[data-contact-id]');
       if (!box) return;
       const id = box.getAttribute('data-contact-id');
       if (box.checked) selected.add(id); else selected.delete(id);
       updateSelectedBadge();
-    });
+    };
   }
 
   function updateSelectedBadge() {
@@ -230,24 +254,5 @@ export default function CreateCalls(root) {
   }
 }
 
-/* Data access */
-async function fetchContacts(filters) {
-  if (globalThis.supabase?.from) {
-    let q = supabase.from('contacts').select('contact_id, contact_first, contact_last, contact_email, contact_phone').limit(200);
-    if (filters.contact_first) q = q.ilike('contact_first', `%${filters.contact_first}%`);
-    if (filters.contact_last)  q = q.ilike('contact_last',  `%${filters.contact_last}%`);
-    if (filters.contact_email) q = q.ilike('contact_email', `%${filters.contact_email}%`);
-    if (filters.contact_phone) q = q.ilike('contact_phone', `%${filters.contact_phone}%`);
-    const { data, error } = await q;
-    if (!error && Array.isArray(data)) return data;
-    console.warn('Supabase contacts error:', error);
-  }
-
-  return [
-    { contact_id: crypto.randomUUID(), contact_first:'Ana',  contact_last:'Lopez',  contact_email:'ana@example.com',  contact_phone:'555-1001' },
-    { contact_id: crypto.randomUUID(), contact_first:'Jamal',contact_last:'Reed',   contact_email:'jamal@example.com',contact_phone:'555-1002' },
-    { contact_id: crypto.randomUUID(), contact_first:'Mina', contact_last:'Chen',   contact_email:'mina@example.com', contact_phone:'555-1003' },
-  ];
-}
-
+// Escape util
 function escapeHtml(s=''){return s.replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
