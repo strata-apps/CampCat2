@@ -342,6 +342,7 @@ export default function DesignWorkflow(root) {
   }
 
   // ---- Persistence ----------------------------------------------------------
+  // ---- Persistence ----------------------------------------------------------
   async function persistWorkflow() {
     if (!campaign_id) {
       alert('Please specify a campaign_id first.');
@@ -363,16 +364,20 @@ export default function DesignWorkflow(root) {
           .update(payload)
           .eq('campaign_id', campaign_id);
         if (error) throw error;
-        alert('Workflow saved to campaign!');
+
+        // ✅ Go back to Calls list after saving
+        location.hash = '#/calls';
       } catch (e) {
         console.warn('Save error:', e);
         alert('Failed to save to server. See console for details.');
       }
     } else {
       console.log('[demo] would update call_campaigns', campaign_id, payload);
-      alert('Workflow saved (demo mode). Check console for payload.');
+      // ✅ Demo mode: still route back to Calls
+      location.hash = '#/calls';
     }
   }
+
 
 
   function escapeHtml(s=''){return s.replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
