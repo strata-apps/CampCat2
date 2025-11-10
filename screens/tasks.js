@@ -1,8 +1,9 @@
 // screens/tasks.js
 // Task list & creation screen
 // - Lists tasks for the signed-in user (public.tasks)
-// - "Complete" deletes the task row
-// - Mounts the enhanced task creator from functions/tasks_function.js
+// - "Complete" deletes the row
+// - Task creator is hidden until "Create New Task" is clicked
+// - Shows contact name (first + last) instead of raw contact_id
 
 import renderTasks from '../functions/tasks_function.js';
 
@@ -10,51 +11,31 @@ export default async function TasksScreen(root) {
   root.innerHTML = '';
   root.classList.add('screen-tasks');
 
-  // Basic layout
+  // --- Safe DOM helpers ---
   const el = (tag, attrs = {}, ...kids) => {
-    // Support: el('div', 'class-name', children...)
-    if (typeof attrs === 'string') {
-      attrs = { class: attrs };
-    }
+    if (typeof attrs === 'string') attrs = { class: attrs };
     if (attrs == null) attrs = {};
-
     const n = document.createElement(tag);
-
-    // Apply attributes safely
     for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') {
-        n.className = v;
-      } else if (k === 'style' && typeof v === 'object' && v !== null) {
-        Object.assign(n.style, v);
-      } else if (k.startsWith('on') && typeof v === 'function') {
-        n[k] = v;
-      } else if (v !== undefined && v !== null) {
-        n.setAttribute(k, v);
-      }
+      if (k === 'class') n.className = v;
+      else if (k === 'style' && v && typeof v === 'object') Object.assign(n.style, v);
+      else if (k.startsWith('on') && typeof v === 'function') n[k] = v;
+      else if (v !== undefined && v !== null) n.setAttribute(k, v);
     }
-
-    // Append children
     for (const kid of kids.flat()) {
       if (kid == null) continue;
-      n.appendChild(
-        typeof kid === 'string'
-          ? document.createTextNode(kid)
-          : kid
-      );
+      n.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
     }
-
     return n;
   };
-
   const div = (attrs, ...kids) => el('div', attrs, ...kids);
-  const btn = (txt, cls = 'btn') => el('button', { class: cls }, txt);
 
-  const head = div('page-head', 
+  const head = div('page-head',
     el('h1', { class: 'page-title' }, 'Tasks'),
     el('div', { class: 'label' }, 'Create and manage your tasks.')
   );
 
-  const listCard = div('card', 
+  const listCard = div('card',
     el('div', { class: 'kicker' }, 'Your Tasks'),
     el('div', { class: 'big' }, 'Open Tasks'),
     el('div', { class: 'label', style: { marginTop: '6px' } }, 'Only tasks assigned to you are shown.')
@@ -62,12 +43,20 @@ export default async function TasksScreen(root) {
   const listWrap = el('div', { style: { marginTop: '10px' } });
   listCard.appendChild(listWrap);
 
-  const createCard = div('card', 
-    el('div', { class: 'kicker' }, 'Create'),
-    el('div', { class: 'big' }, 'New Task'),
+  // Creator card with toggle button; creator body stays hidden until clicked
+  const createCard = div('card',
+    el('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' } },
+      div(null,
+        el('div', { class: 'kicker' }, 'Create'),
+        el('div', { class: 'big' }, 'New Task')
+      ),
+      el('div', null,
+        el('button', { id: 'btnToggleCreator', class: 'btn' }, 'Create New Task')
+      )
+    ),
     el('div', { class: 'label', style: { marginTop: '6px' } }, 'Assign to one or many contacts via filters.')
   );
-  const creatorMount = el('div');
+  const creatorMount = el('div', { id: 'creatorMount', style: { display: 'none', marginTop: '12px' } });
   createCard.appendChild(creatorMount);
 
   const logCard = div('card',
@@ -77,9 +66,22 @@ export default async function TasksScreen(root) {
 
   root.append(head, listCard, createCard, logCard);
 
-  // Mount the task creator (from functions/tasks_function.js)
-  // No contact is passed here (screen-level composer). It will use filters to select contacts.
-  creatorMount.appendChild(renderTasks({ contact: null }));
+  // Toggle mount of the task creator
+  const btnToggle = createCard.querySelector('#btnToggleCreator');
+  let creatorMounted = false;
+  btnToggle.onclick = () => {
+    if (creatorMount.style.display === 'none') {
+      if (!creatorMounted) {
+        creatorMount.appendChild(renderTasks({ contact: null }));
+        creatorMounted = true;
+      }
+      creatorMount.style.display = '';
+      btnToggle.textContent = 'Close';
+    } else {
+      creatorMount.style.display = 'none';
+      btnToggle.textContent = 'Create New Task';
+    }
+  };
 
   // Load + render list
   await renderList();
@@ -100,9 +102,10 @@ export default async function TasksScreen(root) {
       return;
     }
 
+    // Select with alias for "text" (reserved word) -> task_text
     const { data, error } = await s
       .from('tasks')
-      .select('id, task_text, active, created_at, contact_id')
+      .select('id, task_text:text, active, created_at, contact_id')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
@@ -117,13 +120,17 @@ export default async function TasksScreen(root) {
       return;
     }
 
+    // Build a map of contact_id -> "First Last"
+    const idSet = new Set(data.map(r => r.contact_id).filter(v => v != null));
+    const contactNameMap = await fetchContactNames([...idSet]); // { contact_id: "First Last" }
+
     // Table
     const table = el('table', { class: 'table', style: { width: '100%', borderCollapse: 'collapse' } });
     table.innerHTML = `
       <thead>
         <tr>
           <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Task</th>
-          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Contact ID</th>
+          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Contact</th>
           <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Created</th>
           <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Complete</th>
         </tr>
@@ -133,10 +140,11 @@ export default async function TasksScreen(root) {
     const tbody = table.querySelector('tbody');
 
     for (const r of data) {
+      const fullName = contactNameMap.get(String(r.contact_id)) || '—';
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td style="padding:10px;border-bottom:1px solid rgba(0,0,0,.06)">${escapeHtml(r.text || '')}</td>
-        <td style="padding:10px;border-bottom:1px solid rgba(0,0,0,.06)">${r.contact_id ?? '—'}</td>
+        <td style="padding:10px;border-bottom:1px solid rgba(0,0,0,.06)">${escapeHtml(r.task_text || '')}</td>
+        <td style="padding:10px;border-bottom:1px solid rgba(0,0,0,.06)">${escapeHtml(fullName)}</td>
         <td style="padding:10px;border-bottom:1px solid rgba(0,0,0,.06)">${fmtDate(r.created_at)}</td>
         <td style="padding:10px;border-bottom:1px solid rgba(0,0,0,.06)">
           <button class="btn" data-complete="${r.id}">Complete</button>
@@ -163,6 +171,30 @@ export default async function TasksScreen(root) {
     });
 
     listWrap.appendChild(table);
+  }
+
+  async function fetchContactNames(contactIds) {
+    const map = new Map();
+    if (!contactIds.length) return map;
+
+    try {
+      const { data, error } = await window.supabase
+        .from('contacts')
+        .select('contact_id, contact_first, contact_last')
+        .in('contact_id', contactIds);
+
+      if (!error && Array.isArray(data)) {
+        for (const row of data) {
+          const key = String(row.contact_id);
+          const name = [row.contact_first, row.contact_last].filter(Boolean).join(' ').trim() || '—';
+          map.set(key, name);
+        }
+      }
+    } catch (e) {
+      // leave map empty on failure
+      log('Contact lookup error: ' + (e?.message || e));
+    }
+    return map;
   }
 
   function fmtDate(iso) {
