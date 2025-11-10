@@ -1,5 +1,5 @@
 // functions/db.js
-import supabase from '../../supabaseClient.js';
+import supabase from '../supabaseClient.js';
 
 /* --------------------- Call Campaigns --------------------- */
 
