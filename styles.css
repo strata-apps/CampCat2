@@ -488,3 +488,11 @@ body {
   transform: scale(0.96);
 }
 
+.btn.btn--signed {
+  background: #0f172a;  /* darker */
+  color: #e2e8f0;
+  border-color: #0f172a;
+}
+.btn.btn--signed:hover { opacity: .95; }
+
+

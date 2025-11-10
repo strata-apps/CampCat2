@@ -1,32 +1,55 @@
 // screens/emails.js
-// Email Campaigns dashboard: lists campaigns from Supabase and wires Gmail auth (send scope)
-// Requirements:
-//  - window.supabase must be initialized globally
-//  - Add Google Identity Services: we auto-load it (ensureGIS), but set window.GOOGLE_CLIENT_ID
-//  - Table: public.email_campaigns (see SQL below)
+// Email Campaigns screen (Supabase + Gmail send). No workflow fields.
+// - Create campaign inline: choose filter -> design -> Save Campaign
+// - Edit/Execute per-campaign from the list
+//
+// Requires:
+//  - global window.supabase
+//  - window.GOOGLE_CLIENT_ID (string) OR edit the fallback below
+//  - functions/email_design.js exports default openEmailDesigner({initial,onSave,onClose})
+//  - functions/filters.js exports mountContactFilters(container) and getSelectedFilter(container)
+
+import openEmailDesigner from '../functions/email_design.js';
+import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
 
 export default function Emails(root) {
   root.innerHTML = `
-    <section class="page-head">
-      <h1 class="page-title">Email Campaigns</h1>
-      <div style="display:flex; gap:8px; justify-content:right; margin-top:10px;">
+    <section class="page-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div>
+        <h1 class="page-title">Email Campaigns</h1>
+        <div class="label">Create, edit, and execute email campaigns using your Gmail account.</div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <div id="gmailStatus" style="display:flex;align-items:center;gap:6px;visibility:hidden">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#16a34a;"></span>
+          <span class="label" style="font-weight:700;color:#14532d">Signed In</span>
+        </div>
         <button id="btnGmail" class="btn">Sign in with Google</button>
         <button id="btnRevoke" class="btn btn-danger" disabled>Sign out</button>
-        <button id="btnSendTest" class="btn" disabled>Send Test</button>
-        <a class="btn-add" href="#/create-emails">New Campaign</a>
       </div>
     </section>
 
-    <section id="emails-stats" class="cards" style="margin-bottom:14px">
-      <div class="card" id="stat-total-sent">
-        <div class="kicker">Engagement</div>
-        <div class="big">—</div>
-        <div class="label">Total campaigns</div>
+    <!-- New Campaign composer (inline) -->
+    <section class="card" id="new-campaign">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>
+          <div class="kicker">Create</div>
+          <div class="big">New Campaign</div>
+        </div>
+        <div>
+          <button id="btnDesign" class="btn">Design Email</button>
+          <button id="btnSave" class="btn-primary" disabled>Save Campaign</button>
+        </div>
       </div>
-      <div class="card" id="stat-active-campaigns">
-        <div class="kicker">Campaigns</div>
-        <div class="big">—</div>
-        <div class="label">Active email campaigns</div>
+
+      <div class="latest-row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+        <input id="campaign-subject" class="input" placeholder="Subject" style="min-width:260px;flex:1">
+        <div id="filterMount" class="latest-row" style="gap:8px;flex-wrap:wrap"></div>
+      </div>
+
+      <div id="designBadge" class="badge" style="display:none;margin-top:10px">Template ready ✓</div>
+      <div id="composerHelp" class="label" style="margin-top:6px">
+        1) Choose a filter • 2) Design email • 3) Save Campaign
       </div>
     </section>
 
@@ -38,12 +61,20 @@ export default function Emails(root) {
     </div>
   `;
 
-  const btnGmail   = root.querySelector('#btnGmail');
-  const btnRevoke  = root.querySelector('#btnRevoke');
-  const btnSendTst = root.querySelector('#btnSendTest');
   const listMount  = root.querySelector('#emails-list');
   const logBox     = root.querySelector('#log');
+  const btnGmail   = root.querySelector('#btnGmail');
+  const btnRevoke  = root.querySelector('#btnRevoke');
+  const gmailStatus= root.querySelector('#gmailStatus');
 
+  // New Campaign controls
+  const filterMount   = root.querySelector('#filterMount');
+  const btnDesign     = root.querySelector('#btnDesign');
+  const btnSave       = root.querySelector('#btnSave');
+  const subjInput     = root.querySelector('#campaign-subject');
+  const designBadge   = root.querySelector('#designBadge');
+
+  let designed = { html: '', preheader: '', subject: '' };
   let accessToken = null;
   let tokenClient = null;
 
@@ -53,59 +84,116 @@ export default function Emails(root) {
     await ensureGIS();
     initOAuth();
 
-    const { campaigns, activeCampaigns } = await fetchCampaigns();
-    // Show totals using your schema
-    updateStat('#stat-total-sent .big', campaigns.length);
-    updateStat('#stat-active-campaigns .big', activeCampaigns.length);
-    renderCampaigns(activeCampaigns);
+    // mount filters for new campaign
+    mountContactFilters(filterMount);
+
+    await refreshList();
+  }
+
+  async function refreshList() {
+    const { campaigns } = await fetchCampaigns();
+    renderCampaigns(campaigns);
   }
 
   /* ---------------- Supabase data ---------------- */
 
   async function fetchCampaigns() {
-    // Reads from public.email_campaigns using your column names
-    if (globalThis.supabase?.from) {
-      const { data, error } = await supabase
-        .from('email_campaigns')
-        .select('campaign_id, campaign_subject, filters, email_content, workflow, created_at, updated_at')
-        .order('updated_at', { ascending: false });
-      if (!error && Array.isArray(data)) {
-        const now = new Date();
-        const act = data.filter((c) => isActive(c, now));
-        return { campaigns: data, activeCampaigns: act };
-      }
-      if (error) log('Supabase fetch error: ' + error.message);
+    if (!globalThis.supabase?.from) return { campaigns: [] };
+    const { data, error } = await supabase
+      .from('email_campaigns')
+      .select('campaign_id, campaign_subject, filters, email_content, created_at, updated_at')
+      .order('updated_at', { ascending: false });
+    if (error) {
+      log('Supabase fetch error: ' + error.message);
+      return { campaigns: [] };
     }
-    // Fallback demo if Supabase unavailable
-    const demo = [
-      {
-        campaign_id: crypto.randomUUID(),
-        campaign_subject: 'STEM Night — Reminder',
-        filters: { field: 'school', value: 'Isaac' },
-        email_content: '<h1>STEM Night</h1><p>See you there!</p>',
-        workflow: { start: '2025-11-01T17:00:00Z', end: '2025-11-14T17:00:00Z' },
-        created_at: '2025-11-02T18:03:00Z',
-        updated_at: '2025-11-07T22:17:00Z',
-      },
-      {
-        campaign_id: crypto.randomUUID(),
-        campaign_subject: 'College Conference — Registration',
-        filters: { field: 'grade', value: '12' },
-        email_content: '<p>Registration Link</p>',
-        workflow: { start: '2025-10-12T17:00:00Z', end: '2025-11-20T17:00:00Z' },
-        created_at: '2025-10-10T21:12:00Z',
-        updated_at: '2025-11-05T19:44:00Z',
-      },
-    ];
-    const now = new Date();
-    return { campaigns: demo, activeCampaigns: demo.filter((c) => isActive(c, now)) };
+    return { campaigns: data || [] };
   }
 
-  function isActive(c, now = new Date()) {
-    const endISO = c?.workflow?.end || c?.workflow?.to || null;
-    const end = endISO ? new Date(endISO) : null;
-    return !end || end.getTime() >= now.getTime();
+  async function insertCampaign({ subject, filters, html }) {
+    const payload = {
+      campaign_subject: subject,
+      filters,
+      email_content: html
+    };
+    const { data, error } = await supabase
+      .from('email_campaigns')
+      .insert(payload)
+      .select('campaign_id')
+      .maybeSingle();
+    if (error) throw error;
+    return data?.campaign_id || null;
   }
+
+  async function updateCampaign(campaign_id, { subject, filters, html }) {
+    const payload = {};
+    if (subject != null) payload.campaign_subject = subject;
+    if (filters != null) payload.filters = filters;
+    if (html != null) payload.email_content = html;
+
+    const { error } = await supabase
+      .from('email_campaigns')
+      .update(payload)
+      .eq('campaign_id', campaign_id);
+    if (error) throw error;
+  }
+
+  async function deleteCampaign(id) {
+    const { error } = await supabase
+      .from('email_campaigns')
+      .delete()
+      .eq('campaign_id', id);
+    if (error) throw error;
+  }
+
+  /* ---------------- New Campaign flow ---------------- */
+
+  btnDesign.onclick = () => {
+    openEmailDesigner({
+      initial: {
+        subject: subjInput.value.trim(),
+        preheader: designed.preheader || '',
+        html: designed.html || ''
+      },
+      onSave: ({ subject, preheader, html }) => {
+        designed = { subject, preheader, html };
+        if (subject && !subjInput.value.trim()) subjInput.value = subject;
+        btnSave.disabled = false;
+        designBadge.style.display = '';
+        log('✅ Template saved for new campaign.');
+      }
+    });
+  };
+
+  btnSave.onclick = async () => {
+    const f = getSelectedFilter(filterMount);
+    const subject = subjInput.value.trim();
+    if (!subject) return alert('Please enter a subject.');
+    if (!f) return alert('Please choose a contacts filter.');
+    if (!designed.html) return alert('Please design your email first.');
+
+    try {
+      btnSave.disabled = true;
+      const id = await insertCampaign({
+        subject,
+        filters: f,     // store chosen {field,value} or whatever filters.js returns
+        html: designed.html
+      });
+      log('💾 Campaign saved: ' + (id || '(no id)'));
+      // reset composer & refresh list
+      subjInput.value = '';
+      designed = { html: '', preheader: '', subject: '' };
+      designBadge.style.display = 'none';
+      btnSave.disabled = true;
+      await refreshList();
+      // scroll to list
+      listMount.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } catch (e) {
+      btnSave.disabled = false;
+      alert('Failed to save campaign.');
+      log('Save error: ' + (e?.message || e));
+    }
+  };
 
   /* ---------------- Render list ---------------- */
 
@@ -114,19 +202,19 @@ export default function Emails(root) {
       listMount.innerHTML = `
         <div class="card wide">
           <div>
-            <div class="kicker">No active campaigns</div>
-            <div class="big" style="margin-bottom:6px">You're all caught up</div>
-            <p class="label">Create a new email campaign to get started.</p>
+            <div class="kicker">No campaigns</div>
+            <div class="big" style="margin-bottom:6px">Create your first email campaign</div>
+            <p class="label">Use the section above to select a filter and design your email.</p>
           </div>
         </div>`;
       return;
     }
     listMount.innerHTML = list.map(renderWideCard).join('');
-    listMount.addEventListener('click', onListClick);
+    listMount.onclick = onListClick;
   }
 
   function renderWideCard(c) {
-    const idShort   = (c.campaign_id || '').toString().slice(0, 8);
+    const idShort    = (c.campaign_id || '').toString().slice(0, 8);
     const updatedStr = formatRelative(c.updated_at);
     const createdStr = formatShortDate(c.created_at);
     const filtersTxt = summarizeFilters(c.filters);
@@ -135,68 +223,214 @@ export default function Emails(root) {
         <div style="flex:1; min-width:0">
           <div class="kicker">Campaign</div>
           <div class="big" style="margin-bottom:6px">${escapeHtml(c.campaign_subject || 'Untitled Email')}</div>
-          <div class="latest-row">
+          <div class="latest-row" style="gap:6px;flex-wrap:wrap">
             <span class="badge">ID: ${idShort}…</span>
             ${filtersTxt ? `<span class="badge">${escapeHtml(filtersTxt)}</span>` : ''}
+            <span class="badge" data-status>Ready</span>
           </div>
           <p class="label" style="margin-top:8px">
             Updated ${updatedStr} • Created ${createdStr}
           </p>
         </div>
         <div style="display:flex; align-items:flex-start; justify-content:flex-end; gap:8px;">
-          <button class="btn" data-test="${escapeHtml(c.campaign_id)}">Send Test</button>
+          <button class="btn" data-edit="${escapeHtml(c.campaign_id)}">Edit Campaign</button>
+          <button class="btn" data-exec="${escapeHtml(c.campaign_id)}">Execute Campaign</button>
           <button class="btn-delete" data-del="${escapeHtml(c.campaign_id)}">Delete</button>
         </div>
       </div>
     `;
   }
 
-  function onListClick(e) {
-    const del = e.target.closest('button[data-del]');
-    if (del) return onDelete(del.getAttribute('data-del'));
-    const tst = e.target.closest('button[data-test]');
-    if (tst) return onSendTest(tst.getAttribute('data-test'));
+  async function onListClick(e) {
+    const del  = e.target.closest('button[data-del]');
+    const edit = e.target.closest('button[data-edit]');
+    const exec = e.target.closest('button[data-exec]');
+    if (del)  return doDelete(del.getAttribute('data-del'));
+    if (edit) return doEdit(edit.getAttribute('data-edit'));
+    if (exec) return doExecute(exec.getAttribute('data-exec'));
   }
 
-  async function onDelete(id) {
+  async function doDelete(id) {
     if (!id) return;
     if (!confirm('Delete this email campaign? This cannot be undone.')) return;
-    if (globalThis.supabase?.from) {
-      const { error } = await supabase.from('email_campaigns').delete().eq('campaign_id', id);
-      if (!error) {
-        listMount.querySelector(`[data-id="${CSS.escape(id)}"]`)?.remove();
-        // Update totals quickly
-        updateStat('#stat-active-campaigns .big', listMount.querySelectorAll('.card.wide').length);
-      } else {
-        alert('Failed to delete. Please try again.');
+    try {
+      await deleteCampaign(id);
+      const card = listMount.querySelector(`[data-id="${CSS.escape(id)}"]`);
+      if (card) card.remove();
+    } catch (e) {
+      log('Delete error: ' + (e?.message || e));
+      alert('Failed to delete.');
+    }
+  }
+
+  async function doEdit(id) {
+    if (!id) return;
+    try {
+      const { data, error } = await supabase
+        .from('email_campaigns')
+        .select('campaign_subject, filters, email_content')
+        .eq('campaign_id', id)
+        .maybeSingle();
+      if (error) throw error;
+      const current = data || {};
+      openEmailDesigner({
+        initial: {
+          subject: current.campaign_subject || '',
+          preheader: '',
+          html: current.email_content || ''
+        },
+        onSave: async ({ subject, preheader, html }) => {
+          const newSubj = subject || current.campaign_subject || '';
+          await updateCampaign(id, { subject: newSubj, html });
+          log('💾 Campaign updated: ' + id);
+          await refreshList();
+        }
+      });
+    } catch (e) {
+      log('Edit error: ' + (e?.message || e));
+      alert('Failed to load campaign for editing.');
+    }
+  }
+
+  async function doExecute(id) {
+    if (!id) return;
+    if (!accessToken) return alert('Please sign in with Google first.');
+
+    // Load campaign
+    const { data, error } = await supabase
+      .from('email_campaigns')
+      .select('campaign_subject, filters, email_content')
+      .eq('campaign_id', id)
+      .maybeSingle();
+    if (error) {
+      log('Exec load error: ' + error.message);
+      return alert('Could not load campaign.');
+    }
+    const subject = data?.campaign_subject || '(No Subject)';
+    const html    = data?.email_content || '';
+    const filters = data?.filters || null;
+
+    // Resolve recipients via public.contacts using the stored filter
+    const emails = await resolveRecipients(filters);
+    if (!emails.length) return alert('No recipients match this filter.');
+
+    // Confirm
+    if (!confirm(`Send to ${emails.length} recipients now?`)) return;
+
+    // Send (BCC batch for simplicity)
+    const card = listMount.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    setStatus(card, 'Sending…', '#1f2937');
+    let ok = false;
+    try {
+      ok = await sendGmail({
+        to: 'me',
+        bcc: emails,
+        subject,
+        text: stripHtml(html) || subject,
+        html
+      });
+    } catch (e) {
+      ok = false;
+      log('Exec send error: ' + (e?.message || e));
+    }
+    if (ok) {
+      setStatus(card, 'Completed Successfully', '#16a34a');
+      log(`✅ Campaign executed: ${id} → ${emails.length} recipients`);
+    } else {
+      // Try individual fallback to capture failure counts
+      let sent = 0, fail = 0;
+      for (const addr of emails) {
+        const one = await sendGmail({
+          to: addr,
+          subject,
+          text: stripHtml(html) || subject,
+          html
+        });
+        one ? sent++ : fail++;
       }
+      if (fail === 0) {
+        setStatus(card, 'Completed Successfully', '#16a34a');
+      } else {
+        setStatus(card, `Completed with ${fail} failed`, '#b45309');
+      }
+      log(`ℹ️ Fallback run complete: sent=${sent}, failed=${fail}`);
     }
   }
 
-  function summarizeFilters(f) {
-    if (!f) return '';
-    if (Array.isArray(f)) {
-      return f.map(one => `${one.field ?? 'field'} = ${one.value ?? ''}`).join(' • ');
+  function setStatus(card, text, color = '#1f2937') {
+    if (!card) return;
+    const badge = card.querySelector('[data-status]');
+    if (badge) {
+      badge.textContent = text;
+      badge.style.background = 'transparent';
+      badge.style.border = `1px solid ${color}`;
+      badge.style.color = color;
     }
-    if (typeof f === 'object') {
-      if (f.field && f.value) return `${f.field} = ${f.value}`;
-      return Object.entries(f).map(([k,v]) => `${k}: ${String(v)}`).join(' • ');
-    }
-    return String(f);
   }
 
-  /* ---------------- Gmail auth + test send ---------------- */
+  async function resolveRecipients(filters) {
+    if (!globalThis.supabase?.from) return [];
+    // Expect filters like { field:'grade', value:'12' } from filters.js; also handle arrays
+    let emails = [];
+    const add = arr => arr.forEach(e => {
+      const x = (e?.contact_email || '').trim();
+      if (x) emails.push(x);
+    });
+
+    if (Array.isArray(filters)) {
+      // Chain equality AND
+      let q = supabase.from('contacts').select('contact_email', { count: 'exact' });
+      for (const f of filters) q = q.eq(f.field, f.value);
+      const { data, error } = await q.limit(5000);
+      if (!error && data) add(data);
+    } else if (filters && filters.field && filters.value != null) {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('contact_email')
+        .eq(filters.field, filters.value)
+        .limit(5000);
+      if (!error && data) add(data);
+    } else {
+      // Fallback: everyone with email (dangerous—confirm!)
+      const doAll = confirm('No filters stored. Send to ALL contacts with an email?');
+      if (!doAll) return [];
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('contact_email')
+        .not('contact_email', 'is', null)
+        .limit(5000);
+      if (!error && data) add(data);
+    }
+
+    // Dedup case-insensitive
+    const seen = new Set();
+    emails = emails.filter(e => {
+      const k = e.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    return emails;
+  }
+
+  /* ---------------- Gmail auth ---------------- */
 
   function initOAuth() {
-    const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID || '765883496085-itufq4k043ip181854tmcih1ka3ascmn.apps.googleusercontent.com';
+    const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com';
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: 'https://www.googleapis.com/auth/gmail.send',
       callback: (resp) => {
-        if (resp.error) return log('OAuth error: ' + JSON.stringify(resp.error));
+        if (resp.error) {
+          log('OAuth error: ' + JSON.stringify(resp.error));
+          return;
+        }
         accessToken = resp.access_token;
         btnRevoke.disabled = false;
-        btnSendTst.disabled = false;
+        // Styling: darken sign-in button + show green light
+        btnGmail.classList.add('btn--signed');
+        btnGmail.textContent = 'Signed In';
+        gmailStatus.style.visibility = 'visible';
         log('✅ Gmail send scope granted.');
       },
     });
@@ -211,41 +445,11 @@ export default function Emails(root) {
       } finally {
         accessToken = null;
         btnRevoke.disabled = true;
-        btnSendTst.disabled = true;
+        btnGmail.classList.remove('btn--signed');
+        btnGmail.textContent = 'Sign in with Google';
+        gmailStatus.style.visibility = 'hidden';
       }
     };
-    btnSendTst.onclick = () => onSendTest(null);
-  }
-
-  async function onSendTest(campaignIdOrNull) {
-    if (!accessToken) return alert('Please Sign in with Google first.');
-    let subject = 'Hello from ReachPoint (test)';
-    let html    = '<p>This is a test from ReachPoint.</p>';
-    let to      = null;
-
-    // If user clicked the per-row "Send Test", load that campaign’s content
-    if (campaignIdOrNull && globalThis.supabase?.from) {
-      const { data, error } = await supabase
-        .from('email_campaigns')
-        .select('campaign_subject, email_content')
-        .eq('campaign_id', campaignIdOrNull)
-        .maybeSingle();
-      if (!error && data) {
-        subject = data.campaign_subject || subject;
-        html    = data.email_content || html;
-      }
-    }
-
-    // Ask who to send to
-    to = prompt('Send a test to which address? (defaults to your Gmail address)', '') || '';
-    // If blank, Gmail API allows "To: me"
-    const ok = await sendGmail({
-      to: to.trim() ? to.trim() : 'me',
-      subject,
-      text: stripHtml(html) || 'Test',
-      html
-    });
-    if (ok) alert('Test sent!');
   }
 
   async function sendGmail({ to, bcc, subject, text, html }) {
@@ -302,11 +506,18 @@ export default function Emails(root) {
 
   /* ---------------- Small utils ---------------- */
 
-  function updateStat(sel, val) {
-    const el = root.querySelector(sel);
-    if (el) el.textContent = Number.isFinite(val) ? val.toLocaleString() : '—';
+  function summarizeFilters(f) {
+    if (!f) return '';
+    if (Array.isArray(f)) {
+      return f.map(one => `${one.field ?? 'field'} = ${one.value ?? ''}`).join(' • ');
+    }
+    if (typeof f === 'object') {
+      if (f.field && f.value != null) return `${f.field} = ${f.value}`;
+      return Object.entries(f).map(([k,v]) => `${k}: ${String(v)}`).join(' • ');
+    }
+    return String(f);
   }
-
+  function escapeHtml(s=''){return String(s).replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
   function formatShortDate(iso) {
     const d = new Date(iso);
     return Number.isNaN(d) ? '—' : d.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
@@ -320,8 +531,6 @@ export default function Emails(root) {
     const days = Math.round(hrs / 24);
     return `${days}d ago`;
   }
-  function escapeHtml(s=''){return String(s).replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-  function summarize(obj) { return JSON.stringify(obj ?? {}, null, 0); }
   function log(msg) {
     const now = new Date();
     logBox.textContent = `${logBox.textContent ? logBox.textContent + '\n' : ''}[${now.toLocaleTimeString()}] ${msg}`;
