@@ -226,7 +226,7 @@ export default async function CallExecution(root) {
     });
     wrap.append(tasks);
 
-    // Outcome buttons (save outcome + responses + notes, then advance)
+    // Outcome buttons (save outcome + response + notes, then advance)
     const actions = div('actions');
     actions.style.display = 'flex';
     actions.style.gap = '8px';
@@ -260,7 +260,7 @@ export default async function CallExecution(root) {
       if (!s) throw new Error('Supabase not found');
 
       // pull selected survey answer + notes from component
-      const responses = dc.getSelectedAnswer();  // string or null
+      const response = dc.getSelectedAnswer();  // string or null
       const notes     = dc.getNotes();           // string
 
       // Upsert into call_progress (for this contact + campaign)
@@ -271,7 +271,7 @@ export default async function CallExecution(root) {
           campaign_id,
           contact_id: c.contact_id,
           outcome: kind,
-          responses: responses ?? null,
+          response: response ?? null,
           notes: (notes || '').trim() || null,
           last_called_at: new Date().toISOString(),
           attempts: 1,
