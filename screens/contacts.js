@@ -14,6 +14,8 @@
 
 import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
 import { openProfileModal } from '../functions/profile.js';
+import { renderContactInfo } from '../functions/contact_info.js';
+
 
 
 export default async function ContactsScreen(root) {
@@ -310,7 +312,25 @@ export default async function ContactsScreen(root) {
     `);
 
     // Outcome, Response, Notes UI (mirrors your call execution flow semantics)  :contentReference[oaicite:2]{index=2}
-    const form = div(null);
+    // 2-column layout: left = contact info, right = call form
+    const layout = div({
+    style: {
+        display: 'grid',
+        gridTemplateColumns: 'minmax(260px, 1fr) 2fr',
+        gap: '12px',
+        alignItems: 'start'
+    }
+    });
+
+    // Left: pretty contact info card (non-null fields only)
+    const infoCol = div(null, renderContactInfo(contact));
+
+    // Right: the call form goes here
+    const formCol = div(null);
+
+    layout.append(infoCol, formCol);
+    body.appendChild(layout);
+
 
     const fld = (label, node) => {
       const w = div('kv');
@@ -326,7 +346,7 @@ export default async function ContactsScreen(root) {
     });
     outcomeSel.value = 'answered';
 
-    // Response (optional free text; you can switch to a preset menu if you want)
+    // Response
     const respInp = document.createElement('input');
     respInp.placeholder = 'Response (e.g., Yes / No / Maybe)';
     Object.assign(respInp.style, { width:'100%', padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:'8px' });
@@ -337,11 +357,13 @@ export default async function ContactsScreen(root) {
     notesTa.placeholder = 'Notes…';
     Object.assign(notesTa.style, { width:'100%', padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:'8px' });
 
-    form.append(
-      fld('Outcome', div('v', outcomeSel)),
+    // Append fields to the RIGHT column
+    formCol.append(
+      fld('Outcome',  div('v', outcomeSel)),
       fld('Response', div('v', respInp)),
-      fld('Notes', div('v', notesTa)),
+      fld('Notes',    div('v', notesTa)),
     );
+
     body.appendChild(form);
 
     const cancel = btn('Cancel', 'btn', () => close());
