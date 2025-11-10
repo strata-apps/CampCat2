@@ -110,13 +110,17 @@ export function openProfileModal(contact) {
     (async () => {
       listBox.innerHTML = el('div','label','Loading…').outerHTML;
 
-      const { data, error } = await sup().from('campaign_progress')
-       .select('campaign_name, notes, call_time, updated_at, created_at')
+      const { data, error } = await sup().from('call_progress')
+        .select(`
+            last_called_at,
+            notes,
+            campaign_id,
+            call_campaigns ( campaign_name )
+        `)
         .eq('contact_id', contact.contact_id)
-        // Order primarily by call_time (newest first), then fallback to updated_at if call_time is null
-        .order('call_time', { ascending: false, nulls: 'last' })
-        .order('updated_at', { ascending: false, nulls: 'last' })
+        .order('last_called_at', { ascending: false, nulls: 'last' })
         .limit(1000);
+
 
       listBox.innerHTML = '';
 
@@ -131,7 +135,10 @@ export function openProfileModal(contact) {
 
       const table = tableView(['When','Campaign','Notes']);
       data.forEach(r => {
-        const when = fmtDate(r.call_time || r.updated_at || r.created_at);
+        const when = fmtDate(r.last_called_at);
+        const name = r.call_campaigns?.campaign_name || '—';
+        const note = r.notes || '—';
+        
         tr(table.tbody,
           when,
           r.campaign_name || '—',
