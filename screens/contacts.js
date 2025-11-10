@@ -15,6 +15,7 @@
 import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
 import { openProfileModal } from '../functions/profile.js';
 import { renderContactInfo } from '../functions/contact_info.js';
+import { renderCallPanel } from '../functions/call_panel.js';
 
 
 
@@ -104,9 +105,10 @@ export default async function ContactsScreen(root) {
 
     // Build base select of useful columns (adjust to your schema)
     let query = s.from('contacts')
-      .select('contact_id, contact_first, contact_last, contact_email, contact_phone')
+      .select('*')
       .order('contact_last', { ascending: true })
       .order('contact_first', { ascending: true });
+
 
     // Apply selected filter(s)
     const sel = getSelectedFilter(filterRow);
@@ -133,66 +135,92 @@ export default async function ContactsScreen(root) {
     }
 
     // Table
+    // Build dynamic columns from data keys
+    const keys = Object.keys(currentRows[0] || {}).filter(Boolean);
+
+    // Optional: put a few commonly useful columns first
+    const preferredOrder = ['contact_first', 'contact_last', 'contact_email', 'contact_phone', 'contact_id'];
+
+    // Final column order: preferred first (if present), then the rest
+    const orderedKeys = [
+    ...preferredOrder.filter(k => keys.includes(k)),
+    ...keys.filter(k => !preferredOrder.includes(k)),
+    ];
+
+    // Create table + dynamic thead
     const table = el('table', { class: 'table', style: { width: '100%', borderCollapse: 'collapse' } });
-    table.innerHTML = `
-      <thead>
-          <tr>
-          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Actions</th>
-          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">First Name</th>
-          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Last Name</th>
-          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Email</th>
-          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Phone</th>
-          </tr>
-      </thead>
-      <tbody></tbody>
-    `;
+    const thead = document.createElement('thead');
+    const htr = document.createElement('tr');
 
-    const tbody = table.querySelector('tbody');
+    // Actions header always first
+    htr.appendChild(
+      el('th', {
+        style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;'
+      }, 'Actions')
+    );
 
+    // Dynamic headers
+    orderedKeys.forEach(k => {
+      const label = k.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase());
+      htr.appendChild(
+        el('th', {
+          style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;'
+        }, label)
+      );
+    });
+
+    thead.appendChild(htr);
+    const tbody = document.createElement('tbody');
+    table.append(thead, tbody);
+
+    // Rows
     for (const r of currentRows) {
       const tr = document.createElement('tr');
 
-      // Actions column (first)
-      const actCell = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' },
-          div({ style: { display: 'flex', gap: '6px' } },
+    // Actions (Call / Edit / View Profile)
+      const actions = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' },
+        div({ style: { display: 'flex', gap: '6px' } },
           btn('Call', 'btn', () => openCallModal(r)),
-          btn('Edit', 'btn', () => openEditContactModal(r))
-          )
+          btn('Edit', 'btn', () => openEditContactModal(r)),
+          btn('View Profile', 'btn', () => openProfileModal(r)),
+        )
       );
+      tr.appendChild(actions);
 
-      // First Name column: name + View Profile button underneath
-      const firstCell = document.createElement('td');
-      firstCell.style = 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)';
-      const nameWrap = div(null,
-          el('div', null, escapeHtml(r.contact_first || '—')),
-          div({ style: { marginTop: '6px' } },
-          btn('View Profile', 'btn', () => openProfileModal(r))
-          )
-      );
-      firstCell.appendChild(nameWrap);
+      // Dynamic cells in the preferred/ordered order
+      orderedKeys.forEach(k => {
+        const td = el('td', {
+          style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)'
+        }, r[k] == null ? '—' : escapeHtml(String(r[k])));
+        tr.appendChild(td);
+      });
 
-      const lastCell  = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' }, escapeHtml(r.contact_last || '—'));
-      const emailCell = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' }, escapeHtml(r.contact_email || '—'));
-      const phoneCell = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' }, escapeHtml(r.contact_phone || '—'));
-
-      // NEW order: Actions, First, Last, Email, Phone
-      tr.append(actCell, firstCell, lastCell, emailCell, phoneCell);
       tbody.appendChild(tr);
     }
 
-
     listWrap.appendChild(table);
+
   }
 
   function exportCSV() {
     if (!currentRows.length) return alert('No rows to export.');
-    const cols = ['contact_id','contact_first','contact_last','contact_email','contact_phone'];
-    const header = cols.join(',');
+
+    // Collect all keys that appear across the current rows
+    const allKeys = Array.from(
+        currentRows.reduce((set, row) => {
+        Object.keys(row || {}).forEach(k => set.add(k));
+        return set;
+        }, new Set())
+    );
+
+    const header = allKeys.join(',');
     const lines = [header];
+
     for (const r of currentRows) {
-      const row = cols.map(k => csvCell(r[k]));
-      lines.push(row.join(','));
+        const row = allKeys.map(k => csvCell(r[k]));
+        lines.push(row.join(','));
     }
+
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -201,6 +229,7 @@ export default async function ContactsScreen(root) {
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
   }
+
   function csvCell(v) {
     if (v == null) return '';
     const s = String(v).replace(/"/g, '""');
@@ -311,60 +340,10 @@ export default async function ContactsScreen(root) {
       <div class="label" style="margin-top:4px">Calling <b>${escapeHtml(displayName)}</b></div>
     `);
 
-    // Outcome, Response, Notes UI (mirrors your call execution flow semantics)  :contentReference[oaicite:2]{index=2}
-    // 2-column layout: left = contact info, right = call form
-    const layout = div({
-    style: {
-        display: 'grid',
-        gridTemplateColumns: 'minmax(260px, 1fr) 2fr',
-        gap: '12px',
-        alignItems: 'start'
-    }
-    });
-
-    // Left: pretty contact info card (non-null fields only)
-    const infoCol = div(null, renderContactInfo(contact));
-
-    // Right: the call form goes here
-    const formCol = div(null);
-
-    layout.append(infoCol, formCol);
-    body.appendChild(layout);
-
-
-    const fld = (label, node) => {
-      const w = div('kv');
-      w.append(el('div','k',label), node);
-      return w;
-    };
-
-    // Outcome
-    const outcomeSel = document.createElement('select');
-    ['answered','no_answer','busy','voicemail','wrong_number','other'].forEach(v => {
-      const opt = document.createElement('option'); opt.value = v; opt.textContent = v.replace('_',' ');
-      outcomeSel.appendChild(opt);
-    });
-    outcomeSel.value = 'answered';
-
-    // Response
-    const respInp = document.createElement('input');
-    respInp.placeholder = 'Response (e.g., Yes / No / Maybe)';
-    Object.assign(respInp.style, { width:'100%', padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:'8px' });
-
-    // Notes
-    const notesTa = document.createElement('textarea');
-    notesTa.rows = 4;
-    notesTa.placeholder = 'Notes…';
-    Object.assign(notesTa.style, { width:'100%', padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:'8px' });
-
-    // Append fields to the RIGHT column
-    formCol.append(
-      fld('Outcome',  div('v', outcomeSel)),
-      fld('Response', div('v', respInp)),
-      fld('Notes',    div('v', notesTa)),
-    );
-
-    body.appendChild(form);
+    // Reuse the shared panel to match call_execution look & fields
+    const panelBox = document.createElement('div');
+    body.appendChild(panelBox);
+    const panel = renderCallPanel(panelBox, { contact });
 
     const cancel = btn('Cancel', 'btn', () => close());
     const save   = btn('Save Call', 'btn-primary', async () => {
@@ -373,14 +352,17 @@ export default async function ContactsScreen(root) {
         const { data: { user } } = await s.auth.getUser();
         const user_id = user?.id || null;
 
+        const core = panel.getPayload();
+        const now = new Date().toISOString();
+
         const payload = {
           user_id,
-          outcome: outcomeSel.value,
-          response: respInp.value.trim() || null,
-          notes: notesTa.value.trim() || null,
-          call_time: nowIso(),
-          update_time: nowIso(),
-          last_called_at: nowIso(),
+          outcome: core.outcome,
+          response: core.response,
+          notes: core.notes,
+          call_time: now,
+          update_time: now,
+          last_called_at: now,
           contact_id: contact.contact_id
         };
 
@@ -396,6 +378,7 @@ export default async function ContactsScreen(root) {
     });
     footer.append(cancel, save);
   }
+
 
   function buildModal(title='Modal') {
     const wrap = el('div', { style: {
