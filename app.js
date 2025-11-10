@@ -67,7 +67,7 @@ const routes = {
   },
 
   // Stubs
-  '#/tasks': (root) => showPlaceholder(root, 'Tasks'),
+  // '#/tasks': (root) => showPlaceholder(root, 'Tasks'),
   '#/insights': (root) => showPlaceholder(root, 'Insights'),
   '#/contacts': (root) => showPlaceholder(root, 'Contacts'),
 };
