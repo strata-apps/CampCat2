@@ -13,6 +13,8 @@
 // Calling modal UI is modeled after patterns in call_execution.js (layout/fields/flow).  :contentReference[oaicite:1]{index=1}
 
 import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
+import { openProfileModal } from '../functions/profile.js';
+
 
 export default async function ContactsScreen(root) {
   root.innerHTML = '';
@@ -132,45 +134,50 @@ export default async function ContactsScreen(root) {
     const table = el('table', { class: 'table', style: { width: '100%', borderCollapse: 'collapse' } });
     table.innerHTML = `
       <thead>
-        <tr>
+          <tr>
+          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Actions</th>
           <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">First Name</th>
           <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Last Name</th>
           <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Email</th>
           <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Phone</th>
-          <th style="padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;">Actions</th>
-        </tr>
+          </tr>
       </thead>
       <tbody></tbody>
     `;
+
     const tbody = table.querySelector('tbody');
 
     for (const r of currentRows) {
       const tr = document.createElement('tr');
-      const firstCell = document.createElement('td');
-      firstCell.style = 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)';
-      // First Name cell contains action buttons (Call, Edit)
-      const nameWrap = div(null,
-        el('div', null, escapeHtml(r.contact_first || '—')),
-        div({ style: { display: 'flex', gap: '6px', marginTop: '6px' } },
+
+      // Actions column (first)
+      const actCell = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' },
+          div({ style: { display: 'flex', gap: '6px' } },
           btn('Call', 'btn', () => openCallModal(r)),
           btn('Edit', 'btn', () => openEditContactModal(r))
-        )
+          )
+      );
+
+      // First Name column: name + View Profile button underneath
+      const firstCell = document.createElement('td');
+      firstCell.style = 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)';
+      const nameWrap = div(null,
+          el('div', null, escapeHtml(r.contact_first || '—')),
+          div({ style: { marginTop: '6px' } },
+          btn('View Profile', 'btn', () => openProfileModal(r))
+          )
       );
       firstCell.appendChild(nameWrap);
 
       const lastCell  = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' }, escapeHtml(r.contact_last || '—'));
       const emailCell = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' }, escapeHtml(r.contact_email || '—'));
       const phoneCell = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' }, escapeHtml(r.contact_phone || '—'));
-      const actCell   = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' },
-        div({ style: { display: 'flex', gap: '6px' } },
-          btn('Call', 'btn', () => openCallModal(r)),
-          btn('Edit', 'btn', () => openEditContactModal(r))
-        )
-      );
 
-      tr.append(firstCell, lastCell, emailCell, phoneCell, actCell);
+      // NEW order: Actions, First, Last, Email, Phone
+      tr.append(actCell, firstCell, lastCell, emailCell, phoneCell);
       tbody.appendChild(tr);
     }
+
 
     listWrap.appendChild(table);
   }

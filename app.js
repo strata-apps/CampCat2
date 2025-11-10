@@ -72,9 +72,15 @@ const routes = {
     return module.default(root);
   },
 
+  // events
+  '#/events': async (root) => {
+    const module = await import(`${BASE}/screens/events.js`);
+    return module.default(root);
+  }, 
+
   // Stubs
   // '#/tasks': (root) => showPlaceholder(root, 'Tasks'),
-  '#/insights': (root) => showPlaceholder(root, 'Insights'),
+  //'#/insights': (root) => showPlaceholder(root, 'Insights'),
   //'#/contacts': (root) => showPlaceholder(root, 'Contacts'),
 };
 
