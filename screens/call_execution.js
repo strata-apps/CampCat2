@@ -5,6 +5,9 @@ import { renderContactInfo } from '../functions/contact_info.js';
 import { renderInteractions } from '../functions/interactions.js';
 import { createDataCollection } from '../functions/data_collection.js';
 import { renderTasks } from '../functions/tasks_function.js';
+import { renderCampaignInsights } from '../functions/charts.js'; 
+import { renderCampaignSummaryTable } from '../functions/summary_table.js';
+import { upsertCampaignDraft } from '../functions/db.js'; 
 
 /* ------------------------- route helpers ------------------------- */
 function readCampaignId() {
@@ -64,6 +67,8 @@ export default async function CallExecution(root) {
   let queue = [];              // [contact_id]
   let index = 0;               // current pointer in queue
   let totals = { total: 0, made: 0, answered: 0, missed: 0 };
+  let progressRows = [];   // full rows from call_progress for this campaign
+  let contactsById = new Map();  // Map contact_id -> contact row
 
   // DataCollection component instance for current contact
   let dc = null;
@@ -96,9 +101,12 @@ export default async function CallExecution(root) {
       // 1) Progress rows for this campaign
       const { data: prog, error: progErr } = await s
         .from('call_progress')
-        .select('contact_id, outcome, attempts')
+        .select('contact_id, outcome, response, notes, last_called_at, attempts')
         .eq('campaign_id', campaign_id);
+        
       if (progErr) throw progErr;
+
+      progressRows = prog || [];
 
       let idSet = new Set((prog || []).map(r => r.contact_id));
 
@@ -135,17 +143,18 @@ export default async function CallExecution(root) {
       }
 
       contacts = rows;
+      contactsById = new Map(contacts.map(c => [String(c.contact_id), c]));
 
       // 4) Totals
-      const made = (prog||[]).filter(r => (r.attempts ?? 0) > 0).length;
-      const answered = (prog||[]).filter(r => r.outcome === 'answered').length;
-      const missed = (prog||[]).filter(r => r.outcome === 'no_answer').length;
+      const made = progressRows.filter(r => (r.attempts ?? 0) > 0).length;
+      const answered = progressRows.filter(r => r.outcome === 'answered').length;
+      const missed = progressRows.filter(r => r.outcome === 'no_answer').length;
       totals = { total: queue.length, made, answered, missed };
 
       // 5) Start pointer
       if (queue.length) {
         const firstUnattemptedIdx = queue.findIndex(id => {
-          const row = (prog||[]).find(r => String(r.contact_id) === String(id));
+          const row = progressRows.find(r => String(r.contact_id) === String(id));
           return !row || (row.attempts || 0) === 0;
         });
         index = firstUnattemptedIdx >= 0 ? firstUnattemptedIdx : 0;
@@ -176,15 +185,14 @@ export default async function CallExecution(root) {
     wrap.appendChild(header);
 
     if (!queue.length) {
-      wrap.appendChild(div('card wide', 'No contacts in this campaign.'));
-      return;
+      return renderSummary();
     }
 
     const c = currentContact();
     if (!c) {
-      wrap.appendChild(div('card wide', 'All done!'));
-      return;
+      return renderSummary();
     }
+
 
     // Contact header (name + phone pill)
     const name = String(c.contact_first || c.first_name || c.full_name || `${c.contact_first||''} ${c.contact_last||''}`.trim() || 'Contact').trim();
@@ -240,16 +248,49 @@ export default async function CallExecution(root) {
     wrap.append(actions);
   }
 
+
+  /* --------------------------- Summary Screen --------------------------- */
+  function renderSummary() {
+    wrap.innerHTML = `
+      <div class="cards" style="align-items:flex-start">
+        <div id="sum-left"  class="card" style="grid-column:span 6;"></div>
+        <div id="sum-right" class="card" style="grid-column:span 6;"></div>
+      </div>
+    `;
+    const left  = wrap.querySelector('#sum-left');
+    const right = wrap.querySelector('#sum-right');
+
+    // Left: Insights (counts + bar charts) – uses Chart.js styles similar to your earlier insights
+    renderCampaignInsights(left, { progressRows });
+
+    // Right: Filterable table + create-campaign-from-filter + per-row Call buttons
+    renderCampaignSummaryTable(right, {
+      progressRows,
+      contactsById,
+      campaignId: campaign_id,
+      onRecall: (contact_id) => {
+        // Optional: jump back to this contact in the live UI
+        const ix = queue.findIndex(id => String(id) === String(contact_id));
+        if (ix >= 0) { index = ix; render(); }
+      }
+    });
+  }
+
+
   /* -------------------------- Navigation -------------------------- */
   function onBack() {
     if (index > 0) { index -= 1; render(); }
   }
   function next() {
-    if (index < queue.length - 1) { index += 1; render(); }
-    else { // finished
+    if (index < queue.length - 1) {
+      index += 1;
       render();
+    } else {
+      // finished -> summary
+      renderSummary();
     }
   }
+
 
   /* ------------------------- Persist outcome ---------------------- */
   async function onOutcome(kind) {
@@ -290,15 +331,17 @@ export default async function CallExecution(root) {
       // Refresh header totals quick (lightweight counts)
       const { data: prog, error: progErr } = await s
         .from('call_progress')
-        .select('outcome, attempts')
+        .select('contact_id, outcome, response, notes, last_called_at, attempts')
         .eq('campaign_id', campaign_id);
 
       if (!progErr) {
-        const made = (prog||[]).filter(r => (r.attempts ?? 0) > 0).length;
-        const answered = (prog||[]).filter(r => r.outcome === 'answered').length;
-        const missed = (prog||[]).filter(r => r.outcome === 'no_answer').length;
+        progressRows = prog || [];
+        const made = progressRows.filter(r => (r.attempts ?? 0) > 0).length;
+        const answered = progressRows.filter(r => r.outcome === 'answered').length;
+        const missed = progressRows.filter(r => r.outcome === 'no_answer').length;
         totals = { total: queue.length, made, answered, missed };
       }
+
 
       next();
     } catch (e) {
