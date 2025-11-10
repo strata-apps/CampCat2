@@ -37,7 +37,7 @@ export async function renderInteractions(root, { contact_id, campaign_id = null 
     // We don't know exact column names across repos; try to be resilient.
     // We'll pick the best available timestamp among last_called_at, updated_at, created_at, at.
     let cpq = s.from('call_progress')
-      .select('campaign_id, contact_id, user_id, outcome, notes, last_called_at, updated_at, created_at, at')
+      .select('campaign_id, contact_id, outcome, notes, last_called_at, updated_at, created_at')
       .eq('contact_id', contact_id)
       .order('updated_at', { ascending: false })
       .limit(1000);
@@ -61,12 +61,13 @@ export async function renderInteractions(root, { contact_id, campaign_id = null 
     const fromCampaign = (r) => ({
       at: toTime(r),
       source: 'campaign_call',
-      user_id: r.user_id || null,
+      user_id: null, // call_progress has no user_id in your schema
       campaign_id: r.campaign_id || null,
       outcome: r.outcome || null,
-      response: null,             // campaign responses may live in survey_responses; omit here
-      notes: r.notes || null,     // if your call_progress has notes; otherwise stays null
+      response: null,
+      notes: r.notes || null,
     });
+
 
     const merged = [
       ...(Array.isArray(scData) ? scData.map(fromSingle) : []),

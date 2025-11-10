@@ -97,54 +97,51 @@ export function openProfileModal(contact) {
 
   function renderNotes() {
     sections.notes.innerHTML = '';
-    const head = el('div', { style:{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'10px' }});
+
+    // Header
+    const head = el('div', { style:{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }});
     head.append(el('div','kicker','Campaign Notes'));
+    sections.notes.append(head);
 
-    const input = document.createElement('input');
-    input.placeholder = 'Campaign name (e.g., Fall Phonebank 2025)';
-    Object.assign(input.style, { flex:'1 1 auto', padding:'8px 10px', border:'1px solid #d1d5db', borderRadius:'8px' });
-
-    const loadBtn = el('button', { class:'btn' }, 'Load Notes');
-    const wrap = el('div', { style:{ display:'flex', gap:'8px', width:'100%', maxWidth:'720px' }}, input, loadBtn);
-    sections.notes.append(head, wrap);
-
-    const listBox = el('div', { style:{ marginTop:'10px' }});
+    // Container for results
+    const listBox = el('div', { style:{ marginTop:'4px' }});
     sections.notes.append(listBox);
 
-    loadBtn.onclick = async () => {
-      const name = (input.value || '').trim();
-      listBox.innerHTML = '';
-      if (!name) {
-        listBox.append(el('div','label','Enter a campaign name.'));
-        return;
-      }
+    (async () => {
+      listBox.innerHTML = el('div','label','Loading…').outerHTML;
+
       const { data, error } = await sup().from('campaign_progress')
-        .select('notes, user_id, updated_at, created_at, campaign_name')
+       .select('campaign_name, notes, call_time, updated_at, created_at')
         .eq('contact_id', contact.contact_id)
-        .ilike('campaign_name', name)
-        .order('updated_at', { ascending: false })
-        .limit(100);
+        // Order primarily by call_time (newest first), then fallback to updated_at if call_time is null
+        .order('call_time', { ascending: false, nulls: 'last' })
+        .order('updated_at', { ascending: false, nulls: 'last' })
+        .limit(1000);
+
+      listBox.innerHTML = '';
 
       if (error) {
         listBox.append(el('div','label','Error loading campaign notes.'));
         return;
       }
       if (!data?.length) {
-        listBox.append(el('div','label','No notes found for that campaign.'));
+        listBox.append(el('div','label','No campaign notes yet.'));
         return;
-      }
-      const table = tableView(['When','User','Campaign','Notes']);
+     }
+
+      const table = tableView(['When','Campaign','Notes']);
       data.forEach(r => {
+        const when = fmtDate(r.call_time || r.updated_at || r.created_at);
         tr(table.tbody,
-          fmtDate(r.updated_at || r.created_at),
-          r.user_id || '—',
+          when,
           r.campaign_name || '—',
           r.notes || '—'
         );
       });
       listBox.append(table.node);
-    };
+    })();
   }
+
 
   /* ---------------------- UI helpers ---------------------- */
 
