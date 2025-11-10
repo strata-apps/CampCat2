@@ -5,11 +5,11 @@
 // Requires: window.supabase client
 
 import { renderInteractions } from './interactions.js';
+const sup = () => window.supabase;
+
 
 export function openProfileModal(contact) {
   // FIX TDZ: define sup() immediately so all inner renderers can call it safely.
-  const sup = () => window.supabase;
-
   const { close, body, footer, titleEl } = buildModal('Contact Profile');
   const displayName = [contact.contact_first, contact.contact_last].filter(Boolean).join(' ').trim() || 'Contact';
   titleEl.insertAdjacentHTML('beforeend', `
@@ -70,16 +70,29 @@ export function openProfileModal(contact) {
     }
     const row = data || contact;
 
-    const kv = el('div', { style:{ display:'grid', gridTemplateColumns:'160px 1fr', gap:'8px', maxWidth:'720px' }});
-    const add = (k, v) => { kv.append(el('div','k',k), el('div','v', escapeHtml(v ?? '—'))); };
+    const kv = el('div', {
+        style:{
+            display:'grid',
+            gridTemplateColumns:'200px 1fr',
+            gap:'8px',
+            maxWidth:'720px'
+        }
+    });
 
-    add('First Name', row.contact_first);
-    add('Last Name',  row.contact_last);
-    add('Email',      row.contact_email);
-    add('Phone',      row.contact_phone);
-    add('ID',         row.contact_id);
+    Object.entries(row).forEach(([key, val]) => {
+        const label = key.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase());
+        kv.append(
+            el('div','k', label),
+            el('div','v', escapeHtml(val ?? '—'))
+        );
+    });
 
-    sections.overview.append(el('div','kicker','Contact Details'), el('div','big',displayName), el('div',{style:{height:'8px'}}), kv);
+    sections.overview.append(
+        el('div','kicker','Contact Details'),
+        el('div','big',displayName),
+        el('div',{style:{height:'8px'}}),
+        kv
+    );
   }
 
   function renderNotes() {
