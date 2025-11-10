@@ -1,5 +1,5 @@
 // screens/create_calls.js
-import { upsertCampaignDraft, fetchContacts as dbFetchContacts } from '../functions/db.js';
+import { upsertCampaignDraft, fetchContacts as dbFetchContacts } from '../db.js';
 import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
 
 export default function CreateCalls(root) {
