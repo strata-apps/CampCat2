@@ -120,7 +120,7 @@ export default function Calls(root) {
         </div>
 
         <div style="display:flex; align-items:flex-start; gap:8px;">
-          <a class="btn-add" data-start="${c.campaign_id}" style="text-decoration:none;">Start Calling</a>
+          <a class="btn-add" href="#/call-execution/${encodeURIComponent(c.campaign_id)}" data-start="${c.campaign_id}" style="text-decoration:none;">Start Calling</a>
           <button class="btn-glass" data-workflow="${c.campaign_id}">Edit Workflow</button>
           <button class="btn-delete" data-del="${c.campaign_id}">Delete</button>
         </div>

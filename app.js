@@ -73,25 +73,22 @@ const menuBtn = document.getElementById('menu-btn');
 
 function setActiveTab(hash) {
   const links = document.querySelectorAll('.tab-link');
-  const hp = hash.split('?')[0];
-  const p = hp.split('/');
-  const normalized = p.length > 2 ? `#/${p[1]}` : hp;
+  const hp = String(hash || '');
+  const m = hp.match(/^#\/([A-Za-z0-9\-]+)/);   // get 1st segment only
+  const normalized = m ? `#/${m[1]}` : hp;
   links.forEach((a) => {
     const route = a.getAttribute('data-route');
     a.classList.toggle('active', route === normalized);
   });
 }
 
-
 async function renderRoute() {
   const rawHash = location.hash || DEFAULT_ROUTE;
 
-  // Keep query separate
+  // keep query separate, then normalize dynamic routes
   const hashPath = rawHash.split('?')[0];
-
-  // ✅ Normalize dynamic routes, e.g. "#/call-execution/123" -> "#/call-execution"
-  const parts = hashPath.split('/');          // e.g. ["#", "call-execution", "123"]
-  const base = parts.length > 2 ? `#/${parts[1]}` : hashPath;
+  const m = hashPath.match(/^#\/([A-Za-z0-9\-]+)/);     // "#/call-execution/123" -> "call-execution"
+  const base = m ? `#/${m[1]}` : hashPath;
 
   if (!routes[base]) {
     location.hash = DEFAULT_ROUTE;
@@ -120,7 +117,7 @@ async function renderRoute() {
     }
   }
 
-  setActiveTab(hash);
+  setActiveTab(rawHash);
   appRoot.innerHTML = '';
 
   try {
