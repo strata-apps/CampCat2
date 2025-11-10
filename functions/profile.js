@@ -98,29 +98,27 @@ export function openProfileModal(contact) {
   function renderNotes() {
     sections.notes.innerHTML = '';
 
-    // Header
     const head = el('div', { style:{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }});
     head.append(el('div','kicker','Campaign Notes'));
     sections.notes.append(head);
 
-    // Container for results
     const listBox = el('div', { style:{ marginTop:'4px' }});
     sections.notes.append(listBox);
 
     (async () => {
       listBox.innerHTML = el('div','label','Loading…').outerHTML;
 
+      // ✅ Query the real table and pull campaign_name via FK relationship
       const { data, error } = await sup().from('call_progress')
         .select(`
-            last_called_at,
-            notes,
-            campaign_id,
-            call_campaigns ( campaign_name )
+          last_called_at,
+          notes,
+          campaign_id,
+          call_campaigns ( campaign_name )
         `)
         .eq('contact_id', contact.contact_id)
         .order('last_called_at', { ascending: false, nulls: 'last' })
         .limit(1000);
-
 
       listBox.innerHTML = '';
 
@@ -131,23 +129,20 @@ export function openProfileModal(contact) {
       if (!data?.length) {
         listBox.append(el('div','label','No campaign notes yet.'));
         return;
-     }
+      }
 
       const table = tableView(['When','Campaign','Notes']);
       data.forEach(r => {
         const when = fmtDate(r.last_called_at);
         const name = r.call_campaigns?.campaign_name || '—';
         const note = r.notes || '—';
-        
-        tr(table.tbody,
-          when,
-          r.campaign_name || '—',
-          r.notes || '—'
-        );
+        // ✅ Use the variables we just computed
+        tr(table.tbody, when, name, note);
       });
       listBox.append(table.node);
     })();
   }
+
 
 
   /* ---------------------- UI helpers ---------------------- */
