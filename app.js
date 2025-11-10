@@ -73,18 +73,26 @@ const menuBtn = document.getElementById('menu-btn');
 
 function setActiveTab(hash) {
   const links = document.querySelectorAll('.tab-link');
-  const base = hash.split('?')[0];
+  const hp = hash.split('?')[0];
+  const p = hp.split('/');
+  const normalized = p.length > 2 ? `#/${p[1]}` : hp;
   links.forEach((a) => {
     const route = a.getAttribute('data-route');
-    a.classList.toggle('active', route === base);
+    a.classList.toggle('active', route === normalized);
   });
 }
 
-async function renderRoute() {
-  const hash = location.hash || DEFAULT_ROUTE;
-  const base = hash.split('?')[0];
 
-  // Route exists?
+async function renderRoute() {
+  const rawHash = location.hash || DEFAULT_ROUTE;
+
+  // Keep query separate
+  const hashPath = rawHash.split('?')[0];
+
+  // ✅ Normalize dynamic routes, e.g. "#/call-execution/123" -> "#/call-execution"
+  const parts = hashPath.split('/');          // e.g. ["#", "call-execution", "123"]
+  const base = parts.length > 2 ? `#/${parts[1]}` : hashPath;
+
   if (!routes[base]) {
     location.hash = DEFAULT_ROUTE;
     return;
