@@ -416,7 +416,7 @@ export default function Emails(root) {
   /* ---------------- Gmail auth ---------------- */
 
   function initOAuth() {
-    const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com';
+    const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID || '765883496085-itufq4k043ip181854tmcih1ka3ascmn.apps.googleusercontent.com';
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: GOOGLE_CLIENT_ID,
       scope: 'https://www.googleapis.com/auth/gmail.send',
