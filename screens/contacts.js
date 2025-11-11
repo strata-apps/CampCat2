@@ -16,6 +16,8 @@ import { mountContactFilters, getSelectedFilter } from '../functions/filters.js'
 import { openProfileModal } from '../functions/profile.js';
 import { renderContactInfo } from '../functions/contact_info.js';
 import { renderCallPanel } from '../functions/call_panel.js';
+import { openAddVariableModal } from '../functions/add_variable.js';
+
 
 
 
@@ -61,7 +63,15 @@ export default async function ContactsScreen(root) {
     ),
     div(null,
       btn('New Contact', 'btn', () => openCreateContactModal()),
-      btn('Export CSV', 'btn', () => exportCSV())
+      btn('Export CSV', 'btn', () => exportCSV()),
+      btn('Add Column', 'btn', () =>
+        openAddVariableModal({
+          onSuccess: async (newCol) => {
+            // Re-query so the new column appears immediately in the dynamic table & CSV
+            await renderList();
+          }
+        })
+      )
     )
   );
   const filterRow = div({ class: 'latest-row', style: { gap: '8px', flexWrap: 'wrap', marginTop: '8px' } });
