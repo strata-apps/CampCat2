@@ -15,6 +15,23 @@ if (!supabase) {
   }
 }
 
+// --- AUTH EVENT LISTENER ---
+// Redirect the user immediately if their session expires, logs out, or refresh fails.
+try {
+  supabase.auth.onAuthStateChange((_event, session) => {
+    if (!session) {
+      // Session expired or logged out
+      if (location.hash !== '#/signin') location.hash = '#/signin';
+    } else {
+      // Signed in while on signin page
+      if (location.hash === '#/signin') location.hash = '#/dashboard';
+    }
+  });
+} catch (e) {
+  console.warn('onAuthStateChange attach failed:', e);
+}
+
+
 // ---- Routes ----
 const routes = {
   '#/dashboard': async (root) => {
@@ -167,13 +184,29 @@ function showPlaceholder(root, title) {
     </div>`;
 }
 
-// Top bar links update hash
+// Top bar links update hash (force re-render if the same tab is clicked)
 document.getElementById('top-tabs')?.addEventListener('click', (e) => {
   const a = e.target.closest('.tab-link');
   if (!a) return;
   e.preventDefault();
+
   const route = a.getAttribute('data-route');
-  if (route) location.hash = route;
+  if (!route) return;
+
+  const currentBase = (location.hash || '').split('?')[0];
+  if (route === currentBase) {
+    // Same route: force a re-render so the screen reloads cleanly
+    renderRoute();
+  } else {
+    location.hash = route;
+  }
+});
+
+// If we come back to a blank app (rare race), refresh the current route
+window.addEventListener('visibilitychange', () => {
+  if (!document.hidden && appRoot && !appRoot.hasChildNodes()) {
+    renderRoute();
+  }
 });
 
 // Mobile menu toggle
@@ -188,3 +221,11 @@ window.addEventListener('DOMContentLoaded', () => {
   if (!location.hash) location.hash = DEFAULT_ROUTE;
   renderRoute();
 });
+
+// Log out button
+document.getElementById('logout-btn')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  try { await supabase.auth.signOut(); } catch {}
+  location.hash = '#/signin';
+});
+
