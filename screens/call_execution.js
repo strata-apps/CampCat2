@@ -257,30 +257,38 @@ export default async function CallExecution(root) {
     // If all done or pointer is beyond the last contact, show summary
     if (!c || isFinished()) return renderSummary();
 
-    // Contact header (name + phone pill)
+    // Contact header (name + centered phone button)
     const name = String(c.contact_first || c.first_name || c.full_name || `${c.contact_first||''} ${c.contact_last||''}`.trim() || 'Contact').trim();
     const phone = phoneFrom(c);
+    const href  = telHref(phone);
 
-    const head = div('',);
+    const head = div('');
     const title = div('page-title', name);
     title.style.textAlign = 'center';
-    const pillWrap = div('',);
-    pillWrap.style.display = 'flex';
-    pillWrap.style.justifyContent = 'center';
-    pillWrap.style.marginTop = '8px';
-    const href = telHref(phone);
-    const callBtn = a(href ? `Call ${humanPhone(phone)}` : 'No phone number', href || '#', 'callBtn');
+
+    const phoneWrap = div('');
+    phoneWrap.style.display = 'flex';
+    phoneWrap.style.justifyContent = 'center';
+    phoneWrap.style.marginTop = '8px';
+
+    // Use class "btn" per your global styling
+    const callBtn = a(href ? humanPhone(phone) : 'No phone number', href || '#', 'btn');
     if (!href) { callBtn.style.pointerEvents = 'none'; callBtn.style.opacity = '.6'; }
-    pillWrap.appendChild(callBtn);
-    head.append(title, pillWrap);
+
+    phoneWrap.appendChild(callBtn);
+    head.append(title, phoneWrap);
     wrap.append(head);
+
 
     // Contact info
     const infoCard = renderContactInfo(c);
-    wrap.append(infoCard);
+    const infoWrap = div('card');
+    infoWrap.append(infoCard);
+    wrap.append(infoWrap);
+
 
     // Interactions timeline
-    const historyCard = div('');
+    const historyCard = div('card');
     renderInteractions(historyCard, { contact_id: c.contact_id, campaign_id });
     wrap.append(historyCard);
 
@@ -289,7 +297,9 @@ export default async function CallExecution(root) {
       campaign_id,
       contact_id: c.contact_id
     });
-    wrap.append(dc.node);
+    const surveyWrap = div('card');
+    surveyWrap.append(dc.node);
+    wrap.append(surveyWrap);
 
     // Tasks
     const tasks = renderTasks({ contact: c });
