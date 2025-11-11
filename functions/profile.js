@@ -37,7 +37,7 @@ export function openProfileModal(contact) {
     interactions: el('div', { style:{ display:'none' } }),
     attendance:   el('div', { style:{ display:'none' } }),
   };
-  body.append(sections.overview, sections.notes, sections.interactions);
+  body.append(sections.overview, sections.notes, sections.interactions, sections.attendance);
 
   // Render
   renderOverview();
