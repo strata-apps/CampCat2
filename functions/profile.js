@@ -22,6 +22,7 @@ export function openProfileModal(contact) {
     { id: 'tab-overview',     label: 'Overview' },
     { id: 'tab-notes',        label: 'Campaign Notes' },
     { id: 'tab-interactions', label: 'Interactions' },
+    { id: 'tab-attendance',   label: 'Attendance' },
   ];
   tabs.forEach(t => {
     const b = el('button', { class:'btn', 'data-tab': t.id }, t.label);
@@ -34,6 +35,7 @@ export function openProfileModal(contact) {
     overview:     el('div'),
     notes:        el('div', { style:{ display:'none' } }),
     interactions: el('div', { style:{ display:'none' } }),
+    attendance:   el('div', { style:{ display:'none' } }),
   };
   body.append(sections.overview, sections.notes, sections.interactions);
 
@@ -41,6 +43,7 @@ export function openProfileModal(contact) {
   renderOverview();
   renderNotes();
   renderInteractions(sections.interactions, { contact_id: contact.contact_id }); // merged timeline
+  renderAttendance();
 
   // Tab switching
   tabsBar.addEventListener('click', (e) => {
@@ -143,6 +146,44 @@ export function openProfileModal(contact) {
     })();
   }
 
+  // NEW: Attendance tab
+  async function renderAttendance() {
+    sections.attendance.innerHTML = '';
+
+    // Heading
+    sections.attendance.append(
+      el('div', 'kicker', 'Attendance'),
+      el('div', 'label', 'Events this contact has attended.')
+    );
+
+    // Load events where contact_id is included in events.contact_ids (JSON array)
+    const { data, error } = await sup()
+      .from('events')
+      .select('event_name, event_date, contact_ids')
+      .contains('contact_ids', [contact.contact_id]) // requires JSON array storage of IDs
+      .order('event_date', { ascending: false });
+
+    if (error) {
+      sections.attendance.append(el('div', 'label', 'Error loading attendance.'));
+      return;
+    }
+
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) {
+      sections.attendance.append(el('div', 'label', 'No recorded attendance for this contact.'));
+      return;
+    }
+
+    // Build table: Event | Date
+    const table = tableView(['Event', 'Date']);
+    rows.forEach(r => {
+      const name = r.event_name || '—';
+      const date = r.event_date ? new Date(r.event_date).toLocaleDateString() : '—';
+      tr(table.tbody, name, date);
+    });
+    sections.attendance.append(table.node);
+  }
+
 
 
   /* ---------------------- UI helpers ---------------------- */
@@ -152,6 +193,7 @@ export function openProfileModal(contact) {
       'tab-overview':     sections.overview,
       'tab-notes':        sections.notes,
       'tab-interactions': sections.interactions,
+      'tab-attendance':   sections.attendance,
     };
     Object.keys(map).forEach(k => map[k].style.display = 'none');
     (map[id] || sections.overview).style.display = '';
