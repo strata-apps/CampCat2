@@ -231,6 +231,14 @@ export default function Workflow(root) {
         events = defaultEvents();
       }
 
+      // 👇 Normalize email actions so they always have an email object
+      events = events.map(ev => ({
+        ...ev,
+        email: ev.type === 'email'
+          ? (ev.email || { subject: '', preheader: '', html: '' })
+          : ev.email,
+      }));
+
       if (statusEl) statusEl.textContent = 'Editing saved workflow.';
     } catch (err) {
       console.warn('Failed to load workflow for campaign:', campaign_id, err);
@@ -427,20 +435,30 @@ export default function Workflow(root) {
       return;
     }
 
+    const serializedEvents = events.map((ev, idx) => ({
+      id: ev.id || uid(),
+      order: idx,
+      type: ev.type,
+      title: ev.title,
+      filters: ev.filters || { outcomes: 'all', responses: 'all' },
+      email: ev.type === 'email'
+        ? (ev.email || { subject: '', preheader: '', html: '' })
+        : undefined,
+    }));
+
     const workflowPayload = {
-        events,
-        filters: lastChosenFilters,
-        saved_at: new Date().toISOString(),
+      events: serializedEvents,
+      filters: lastChosenFilters,
+      saved_at: new Date().toISOString(),
     };
 
-    // Save as TEXT if it originally came as text
     const payload = {
-        workflow: workflowWasString
-            ? JSON.stringify(workflowPayload)
-            : workflowPayload,
-        updated_at: new Date().toISOString(),
+      // Preserve TEXT vs JSON behavior
+      workflow: workflowWasString
+        ? JSON.stringify(workflowPayload)
+        : workflowPayload,
+      updated_at: new Date().toISOString(),
     };
-
 
     if (globalThis.supabase?.from) {
       try {
@@ -452,7 +470,6 @@ export default function Workflow(root) {
         if (error) throw error;
 
         alert('Workflow saved.');
-        // Return to Calls list
         location.hash = '#/calls';
       } catch (e) {
         console.warn('Save error:', e);
@@ -463,6 +480,7 @@ export default function Workflow(root) {
       location.hash = '#/calls';
     }
   }
+
 
   function escapeHtml(s = '') {
     return s.replace(/[&<>"']/g,(m)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));

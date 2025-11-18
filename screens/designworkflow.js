@@ -342,24 +342,33 @@ export default function DesignWorkflow(root) {
   }
 
   // ---- Persistence ----------------------------------------------------------
-  // ---- Persistence ----------------------------------------------------------
-  // ---- Persistence ----------------------------------------------------------
   async function persistWorkflow() {
     if (!campaign_id) {
       alert('Please specify a campaign_id first.');
       return;
     }
 
-    // Full workflow object, including evt.email { subject, preheader, html }
+    // Normalize events so email actions always carry their template
+    const serializedEvents = events.map((ev, idx) => ({
+      id: ev.id || uid(),
+      order: idx,
+      type: ev.type,
+      title: ev.title,
+      filters: ev.filters || { outcomes: 'all', responses: 'all' },
+      // 👇 only add an email object on email actions
+      email: ev.type === 'email'
+        ? (ev.email || { subject: '', preheader: '', html: '' })
+        : undefined,
+    }));
+
     const workflowObj = {
-      events,
+      events: serializedEvents,
       filters: lastChosenFilters,
       saved_at: new Date().toISOString(),
     };
 
     const payload = {
-      // ⬇️ store as TEXT in call_campaigns.workflow
-      workflow: JSON.stringify(workflowObj),
+      workflow: JSON.stringify(workflowObj),  // TEXT column
       updated_at: new Date().toISOString(),
     };
 
@@ -383,6 +392,7 @@ export default function DesignWorkflow(root) {
       location.hash = '#/calls';
     }
   }
+
 
 
 
