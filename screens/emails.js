@@ -522,11 +522,27 @@ export default function Emails(root) {
       const { data, error } = await q.limit(5000);
       if (!error && data) add(data);
     } else if (filters && filters.field && filters.value != null) {
-      const { data, error } = await supabase
+      let q = supabase
         .from('contacts')
-        .select('contact_email')
-        .eq(filters.field, filters.value)
-        .limit(5000);
+        .select('contact_email');
+
+      switch (filters.operator) {
+        case 'contains':
+          q = q.ilike(filters.field, `%${filters.value}%`);
+          break;
+        case 'gte':
+          q = q.gte(filters.field, filters.value);
+          break;
+        case 'lte':
+          q = q.lte(filters.field, filters.value);
+          break;
+        case 'eq':
+        default:
+          q = q.eq(filters.field, filters.value);
+          break;
+      }
+
+      const { data, error } = await q.limit(5000);
       if (!error && data) add(data);
     } else {
       // Fallback: everyone with email (dangerous—confirm!)

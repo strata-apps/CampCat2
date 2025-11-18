@@ -144,14 +144,13 @@ export default function CreateCalls(root) {
     }
   }
 
-  async function runFilter() {
+  async function runFilter() { 
     const filter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, operator, value } or null
 
     try {
       let query = supabase
         .from('contacts')
-        .select('contact_id, contact_first, contact_last, contact_email, contact_phone')
-        .limit(200);
+        .select('contact_id, contact_first, contact_last, contact_email, contact_phone');
 
       if (filter && filter.field && filter.value != null && filter.value !== '') {
         const { field, operator, value } = filter;
