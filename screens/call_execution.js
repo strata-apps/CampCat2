@@ -5,8 +5,9 @@ import { renderContactInfo } from '../functions/contact_info.js';
 import { renderInteractions } from '../functions/interactions.js';
 import { createDataCollection } from '../functions/data_collection.js';
 import { renderTasks } from '../functions/tasks_function.js';
-import { renderCampaignInsights } from '../functions/charts.js'; 
+import { renderCampaignInsights } from '../functions/charts.js';
 import { renderCampaignSummaryTable } from '../functions/summary_table.js';
+import openWorkflowEmailModal from '../functions/workflow_emails.js'; // 👈 NEW
 
 /* ------------------------- route helpers ------------------------- */
 function readCampaignId() {
@@ -46,6 +47,17 @@ function escapeHtml(s = '') {
   return String(s).replace(/[&<>"']/g, (m) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[m]));
+}
+
+function emailFromContact(c) {
+  if (!c) return null;
+  if (c.contact_email) return c.contact_email;
+  if (c.email) return c.email;
+  const keys = Object.keys(c);
+  for (const k of keys) {
+    if (/email/i.test(k) && c[k]) return c[k];
+  }
+  return null;
 }
 
 /* outcome / response helpers for workflow filters */
@@ -103,10 +115,11 @@ export default async function CallExecution(root) {
   let progressRows = [];       // full rows from call_progress for this campaign
   let contactsById = new Map();  // Map contact_id -> contact row
 
-  // Parent campaign row + workflow info for "next step"
+  // Parent campaign row + workflow info
   let parentCampaign = null;      // the call_campaigns row
   let workflowMeta = null;        // parsed workflow JSON (from TEXT)
   let nextCallAction = null;      // next event in workflow with type === 'call'
+  let emailActions = [];          // all events where type === 'email'
 
   // DataCollection component instance for current contact
   let dc = null;
@@ -141,7 +154,7 @@ export default async function CallExecution(root) {
         .from('call_progress')
         .select('contact_id, outcome, response, notes, last_called_at, attempts')
         .eq('campaign_id', campaign_id);
-        
+       
       if (progErr) throw progErr;
 
       progressRows = prog || [];
@@ -165,9 +178,10 @@ export default async function CallExecution(root) {
 
       queue = [...idSet];
 
-      // 3) Parse workflow TEXT -> JSON and compute "next call action"
+      // 3) Parse workflow TEXT -> JSON and compute "next call action" + email actions
       workflowMeta = null;
       nextCallAction = null;
+      emailActions = [];
       if (cc?.workflow) {
         let wf = cc.workflow;
         if (typeof wf === 'string') {
@@ -187,6 +201,9 @@ export default async function CallExecution(root) {
           // "Next call action" is the first later event with type === 'call'.
           const next = ordered.slice(1).find(ev => ev.type === 'call');
           if (next) nextCallAction = next;
+
+          // Collect all email actions
+          emailActions = ordered.filter(ev => ev.type === 'email');
         }
       }
 
@@ -487,7 +504,7 @@ export default async function CallExecution(root) {
     }
   }
 
-  /* ------------------------- Persist outcome ---------------------- */
+  /* ------------------------- Persist outcome + EMAIL HOOK ---------------------- */
   async function onOutcome(kind) {
     try {
       const c = currentContact();
@@ -537,7 +554,35 @@ export default async function CallExecution(root) {
         totals = { total: queue.length, made, answered, missed };
       }
 
-      next();
+      // 🔔 EMAIL WORKFLOW HOOK:
+      // Find the first email action whose filters match this outcome + response
+      const matchingEmailAction = (emailActions || []).find((evt) => {
+        const f = evt.filters || {};
+        const fOut = f.outcomes ?? 'all';
+        const fResp = f.responses ?? 'all';
+        return outcomeMatchesFilter(kind, fOut) && responseMatchesFilter(response, fResp);
+      });
+
+      const emailAddr = emailFromContact(c);
+
+      // If no matching email action OR no contact email, just proceed
+      if (!matchingEmailAction || !emailAddr) {
+        next();
+        return;
+      }
+
+      // Open modal. When done (either sent or cancelled), proceed to next contact.
+      openWorkflowEmailModal({
+        contact: c,
+        action: matchingEmailAction,
+        campaign: parentCampaign,
+        campaignId: campaign_id,
+        outcome: kind,
+        response,
+        onDone: () => {
+          next();
+        },
+      });
     } catch (e) {
       console.error('[call_execution] outcome save failed', e);
       alert('Could not record outcome. Please try again.');
