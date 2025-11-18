@@ -36,7 +36,7 @@ export function renderContactInfo(contact = {}) {
 
   const card = div('detailsCard');
 
-  // Modern card styling (inline so it looks good regardless of global CSS)
+  // Modern card styling
   Object.assign(card.style, {
     width: '100%',
     padding: '14px 16px',
@@ -45,6 +45,7 @@ export function renderContactInfo(contact = {}) {
     background: 'linear-gradient(135deg, #ffffff, #f9fafb)',
     boxShadow: '0 10px 24px rgba(15,23,42,0.08)',
     boxSizing: 'border-box',
+    textAlign: 'center', // center content by default
   });
 
   if (!allPairs.length) {
@@ -134,6 +135,7 @@ export function renderContactInfo(contact = {}) {
     alignItems: 'center',
     gap: '12px',
     marginBottom: '10px',
+    justifyContent: 'center',
   });
 
   const avatar = div('');
@@ -156,6 +158,7 @@ export function renderContactInfo(contact = {}) {
     display: 'flex',
     flexDirection: 'column',
     gap: '2px',
+    alignItems: 'center',
   });
 
   if (displayName) {
@@ -175,6 +178,7 @@ export function renderContactInfo(contact = {}) {
     display: 'flex',
     flexWrap: 'wrap',
     gap: '6px',
+    justifyContent: 'center',
   });
 
   if (school) chipRow.appendChild(makeChip(school));
@@ -195,11 +199,13 @@ export function renderContactInfo(contact = {}) {
     flexWrap: 'wrap',
     gap: '10px',
     marginBottom: '10px',
+    justifyContent: 'center',
   });
 
   if (email) {
     const item = primaryItem('📧', 'Email', email);
-    item.querySelector('.v').style.wordBreak = 'break-all';
+    const vEl = item.querySelector('.v');
+    if (vEl) vEl.style.wordBreak = 'break-all';
     primaryRow.appendChild(item);
   }
   if (phone) {
@@ -251,37 +257,48 @@ export function renderContactInfo(contact = {}) {
     });
     card.appendChild(divider);
 
-    secondaryPairs.forEach(([label, value]) => {
-      const row = div('kv');
-      Object.assign(row.style, {
-        display: 'flex',
-        justifyContent: 'space-between',
-        gap: '8px',
-        padding: '4px 0',
-      });
+    const MAX_VISIBLE = 7;
+    const hiddenContainer = div('');
+    hiddenContainer.style.display = 'none';
 
-      const kEl = div('k', label);
-      Object.assign(kEl.style, {
-        flex: '0 0 40%',
-        fontSize: '11px',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        color: '#6b7280',
-      });
+    secondaryPairs.forEach(([label, value], idx) => {
+      const row = createCenteredRow(label, value);
 
-      const vEl = div('v', value);
-      Object.assign(vEl.style, {
-        flex: '1',
-        fontSize: '13px',
-        fontWeight: '500',
-        color: '#111827',
-        textAlign: 'right',
-        wordBreak: 'break-word',
-      });
-
-      row.append(kEl, vEl);
-      card.appendChild(row);
+      if (idx < MAX_VISIBLE) {
+        card.appendChild(row);
+      } else {
+        hiddenContainer.appendChild(row);
+      }
     });
+
+    if (hiddenContainer.childNodes.length) {
+      card.appendChild(hiddenContainer);
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.textContent = `Show ${hiddenContainer.childNodes.length} more details`;
+      Object.assign(toggle.style, {
+        marginTop: '6px',
+        borderRadius: '999px',
+        border: '1px solid rgba(148,163,184,0.6)',
+        background: 'rgba(248,250,252,0.9)',
+        padding: '6px 12px',
+        fontSize: '12px',
+        fontWeight: '600',
+        cursor: 'pointer',
+      });
+
+      let expanded = false;
+      toggle.addEventListener('click', () => {
+        expanded = !expanded;
+        hiddenContainer.style.display = expanded ? 'block' : 'none';
+        toggle.textContent = expanded
+          ? 'Show fewer details'
+          : `Show ${hiddenContainer.childNodes.length} more details`;
+      });
+
+      card.appendChild(toggle);
+    }
   }
 
   return card;
@@ -318,6 +335,7 @@ function primaryItem(emoji, label, value) {
     background: 'rgba(15,23,42,0.025)',
     border: '1px solid rgba(148,163,184,0.35)',
     flex: '1 1 180px',
+    justifyContent: 'center',
   });
 
   const icon = div('');
@@ -332,6 +350,7 @@ function primaryItem(emoji, label, value) {
     flexDirection: 'column',
     gap: '2px',
     flex: '1',
+    alignItems: 'center',
   });
 
   const kEl = div('k', label);
@@ -352,4 +371,23 @@ function primaryItem(emoji, label, value) {
   content.append(kEl, vEl);
   wrap.append(icon, content);
   return wrap;
+}
+
+function createCenteredRow(label, value) {
+  const row = div('kv');
+  Object.assign(row.style, {
+    padding: '4px 0',
+  });
+
+  // Centered line: **Label:** value
+  const text = document.createElement('div');
+  Object.assign(text.style, {
+    fontSize: '13px',
+    color: '#111827',
+    fontWeight: '500',
+  });
+  text.innerHTML = `<span style="font-weight:700;">${label}:</span> ${value}`;
+
+  row.appendChild(text);
+  return row;
 }
