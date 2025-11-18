@@ -8,6 +8,8 @@ import { renderTasks } from '../functions/tasks_function.js';
 import { renderCampaignInsights } from '../functions/charts.js';
 import { renderCampaignSummaryTable } from '../functions/summary_table.js';
 import openWorkflowEmailModal from '../functions/workflow_emails.js'; // 👈 NEW
+import { renderAttendance } from '../functions/attendance.js';
+
 
 /* ------------------------- route helpers ------------------------- */
 function readCampaignId() {
@@ -462,6 +464,11 @@ export default async function CallExecution(root) {
     const historyCard = div('card');
     renderInteractions(historyCard, { contact_id: c.contact_id, campaign_id });
     wrap.append(historyCard);
+
+    // Attendance (same data as Profile → Attendance tab)
+    const attendanceCard = div('card');
+    renderAttendance(attendanceCard, { contact_id: c.contact_id });
+    wrap.append(attendanceCard);
 
     // Survey + Notes
     dc = createDataCollection({
