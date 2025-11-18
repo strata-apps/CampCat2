@@ -13,8 +13,8 @@ const FALLBACK_FIELDS = [
 
 /**
  * Mounts the dropdown filtering UI inside `container`.
- * Field select -> Value select (auto-populates from distinct DB values).
- * NOW: fields are discovered dynamically from `contacts` columns.
+ * Field select -> Operator select -> Value select.
+ * Fields are discovered dynamically from `contacts` columns.
  */
 export function mountContactFilters(container) {
   if (!container) return;
@@ -24,12 +24,20 @@ export function mountContactFilters(container) {
       <option value="">Loading fields…</option>
     </select>
 
+    <select id="cc-op" class="select-pill" aria-label="Filter operator">
+      <option value="eq">Equals</option>
+      <option value="contains">Contains</option>
+      <option value="gte">≥ (greater or equal)</option>
+      <option value="lte">≤ (less or equal)</option>
+    </select>
+
     <select id="cc-value" class="select-pill" aria-label="Filter value" disabled>
       <option value="">Select value…</option>
     </select>
   `;
 
   const fieldSel = container.querySelector('#cc-field');
+  const opSel    = container.querySelector('#cc-op');
   const valueSel = container.querySelector('#cc-value');
 
   // Async: fetch a sample row to infer columns
@@ -46,7 +54,7 @@ export function mountContactFilters(container) {
       if (!error && Array.isArray(data) && data.length) {
         columns = Object.keys(data[0] || {});
       } else {
-        // Fallback to original 4 fields
+        // Fallback to original fields
         columns = FALLBACK_FIELDS.map(f => f.value);
       }
 
@@ -102,14 +110,17 @@ export function mountContactFilters(container) {
 }
 
 /**
- * Returns the active filter as { field, value } or null if none.
- * Same shape as before, so create_calls.js does not need to change.
+ * Returns the active filter as { field, operator, value } or null if none.
  */
 export function getSelectedFilter(container) {
   const field = container?.querySelector('#cc-field')?.value || '';
+  const operator = container?.querySelector('#cc-op')?.value || 'eq';
   const value = container?.querySelector('#cc-value')?.value || '';
+
+  // If no field or no value (and operator isn't range-like), treat as no filter
   if (!field || value === '') return null;
-  return { field, value };
+
+  return { field, operator, value };
 }
 
 /**
@@ -139,7 +150,7 @@ async function fetchDistinctValues(column) {
 }
 
 function prettyLabel(key) {
-  // contact_grade_level -> "Contact Grade Level"
+  // contact_hs_grad_year -> "Contact Hs Grad Year"
   return key
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (m) => m.toUpperCase());

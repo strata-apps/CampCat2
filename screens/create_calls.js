@@ -1,6 +1,8 @@
 // screens/create_calls.js
-import { upsertCampaignDraft, fetchContacts as dbFetchContacts } from '../db.js';
+import { upsertCampaignDraft } from '../db.js';
+import supabase from '../supabaseClient.js';
 import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
+
 
 export default function CreateCalls(root) {
   root.innerHTML = `
@@ -143,22 +145,51 @@ export default function CreateCalls(root) {
   }
 
   async function runFilter() {
-    const filter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, value } or null
-    const filters = {}; // compatible with dbFetchContacts signature
+    const filter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, operator, value } or null
 
-    // Ask DB for rows (db helper may use ILIKE; we’ll post-filter below if a strict dropdown was chosen)
-    let rows = await dbFetchContacts(filters);
+    try {
+      let query = supabase
+        .from('contacts')
+        .select('contact_id, contact_first, contact_last, contact_email, contact_phone')
+        .limit(200);
 
-    if (filter && filter.field && filter.value != null && filter.value !== '') {
-      // Strict client-side post-filter to the EXACT selected value
-      rows = rows.filter(r => {
-        const v = (r[filter.field] ?? '').toString();
-        return v === filter.value;
-      });
+      if (filter && filter.field && filter.value != null && filter.value !== '') {
+        const { field, operator, value } = filter;
+
+        switch (operator) {
+          case 'contains':
+            // case-insensitive substring search
+            query = query.ilike(field, `%${value}%`);
+            break;
+          case 'gte':
+            query = query.gte(field, value);
+            break;
+          case 'lte':
+            query = query.lte(field, value);
+            break;
+          case 'eq':
+          default:
+            query = query.eq(field, value);
+            break;
+        }
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('runFilter contacts error:', error);
+        alert('Error loading contacts. See console for details.');
+        renderResults([]);
+        return;
+      }
+
+      renderResults(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error('runFilter unexpected error:', e);
+      alert('Error running filter. See console for details.');
+      renderResults([]);
     }
-
-    renderResults(rows);
   }
+
 
   function renderQuestions() {
     const mount = root.querySelector('#cc-questions');
