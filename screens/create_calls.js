@@ -45,8 +45,8 @@ export default function CreateCalls(root) {
 
         <!-- Actions -->
         <div class="latest-row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
-          <button id="cc-run-filter" class="btn-glass">Run Filter</button>
-          <button id="cc-select-all" class="btn-glass">Select All</button>
+          <button id="cc-run-filter" class="btn">Run Filter</button>
+          <button id="cc-select-all" class="btn">Select All</button>
           <span class="badge" id="cc-count">Selected: 0</span>
         </div>
 

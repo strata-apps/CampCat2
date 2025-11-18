@@ -360,7 +360,7 @@ export default async function CallExecution(root) {
                     ? `<button id="btn-next-step" class="btn-add">${escapeHtml(nextLabel)}</button>`
                     : ``)
             }
-            <a id="btn-return" class="btn-glass" href="#/calls">Return to Calls</a>
+            <a id="btn-return" class="btn" href="#/calls">Return to Calls</a>
           </div>
         </div>
 
