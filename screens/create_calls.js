@@ -1,6 +1,5 @@
 // screens/create_calls.js
 import { upsertCampaignDraft, fetchContacts as dbFetchContacts } from '../db.js';
-import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
 
 export default function CreateCalls(root) {
   root.innerHTML = `
@@ -34,13 +33,13 @@ export default function CreateCalls(root) {
       </div>
     </div>
 
-    <!-- Step 1: Filter Contacts (dropdown-driven) -->
+    <!-- Step 1: Filter Contacts (dynamic field filter) -->
     <div class="card wide">
       <div style="flex:1;min-width:0">
         <div class="kicker">Step 1</div>
         <div class="big" style="margin-bottom:6px">Filter Contacts</div>
 
-        <!-- Dynamic dropdown filter UI -->
+        <!-- Dynamic field/operator/value UI -->
         <div id="cc-filter-ui" class="latest-row" style="margin-top:8px;gap:10px;flex-wrap:wrap"></div>
 
         <!-- Actions -->
@@ -83,9 +82,11 @@ export default function CreateCalls(root) {
   let questions = ['Can you attend this event?'];
   let options   = ['Yes','No','Maybe'];
 
-  // ---------- Build filter dropdowns ----------
-  // Mounts a "Field" select and a "Value" select, using distinct values from Supabase
-  mountContactFilters(root.querySelector('#cc-filter-ui'));
+  // All contacts loaded from DB (so we can filter client-side on ANY column)
+  let allContacts = [];
+
+  // Initialize dynamic filters once we know contact columns
+  initDynamicFilters();
 
   // ---------- Wire controls ----------
   root.querySelector('#cc-run-filter')?.addEventListener('click', runFilter);
@@ -106,7 +107,78 @@ export default function CreateCalls(root) {
   renderQuestions();
   renderOptions();
 
+  // ---------- Dynamic filter UI ----------
+
+  async function initDynamicFilters() {
+    try {
+      // Load all contacts once; we’ll filter in-memory by any column
+      allContacts = await dbFetchContacts({}) || [];
+      const columns = allContacts[0] ? Object.keys(allContacts[0]) : [];
+
+      buildFilterUI(columns);
+    } catch (e) {
+      console.error('Failed to init dynamic filters:', e);
+      const mount = root.querySelector('#cc-filter-ui');
+      if (mount) {
+        mount.innerHTML = `<p class="label">Could not load contacts for filtering.</p>`;
+      }
+    }
+  }
+
+  function buildFilterUI(columns) {
+    const mount = root.querySelector('#cc-filter-ui');
+    if (!mount) return;
+
+    if (!columns.length) {
+      mount.innerHTML = `<p class="label">No contacts available to filter.</p>`;
+      return;
+    }
+
+    const optionsHtml = columns.map((col) => {
+      return `<option value="${escapeHtml(col)}">${escapeHtml(prettyLabel(col))}</option>`;
+    }).join('');
+
+    mount.innerHTML = `
+      <select id="cc-field" class="select-pill">
+        ${optionsHtml}
+      </select>
+      <select id="cc-operator" class="select-pill">
+        <option value="contains">Contains</option>
+        <option value="equals">Equals</option>
+        <option value="is_null">Is empty</option>
+        <option value="not_null">Is not empty</option>
+      </select>
+      <input id="cc-value" class="select-pill" placeholder="Filter value (for contains/equals)"
+             style="min-width:180px;">
+    `;
+  }
+
+  function getActiveFilter() {
+    const fieldEl = root.querySelector('#cc-field');
+    const opEl    = root.querySelector('#cc-operator');
+    const valEl   = root.querySelector('#cc-value');
+
+    if (!fieldEl || !opEl) return null;
+
+    const field = fieldEl.value;
+    const operator = opEl.value || 'contains';
+    const value = valEl ? valEl.value.trim() : '';
+
+    if (!field) return null;
+
+    // For "is_null" / "not_null" no value is needed
+    if (operator === 'is_null' || operator === 'not_null') {
+      return { field, operator, value: null };
+    }
+
+    // For equals/contains we require a value
+    if (!value) return null;
+
+    return { field, operator, value };
+  }
+
   // ---------- Functions ----------
+
   async function onDesignWorkflow() {
     try {
       const campaign_id = crypto.randomUUID();
@@ -120,9 +192,12 @@ export default function CreateCalls(root) {
       const qs = (Array.isArray(questions) ? questions : []).map(q => String(q || '').trim()).filter(Boolean);
       const os = (Array.isArray(options)   ? options   : []).map(o => String(o || '').trim()).filter(Boolean);
 
-      // Snapshot chosen dropdown filter for persistence
-      const activeFilter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, value } or null
-      const filtersPayload = activeFilter ? { [activeFilter.field]: activeFilter.value } : null;
+      // Snapshot chosen filter for persistence (simple { field: value } shape)
+      const activeFilter = getActiveFilter(); // { field, operator, value } or null
+      let filtersPayload = null;
+      if (activeFilter && activeFilter.value != null) {
+        filtersPayload = { [activeFilter.field]: activeFilter.value };
+      }
 
       await upsertCampaignDraft({
         campaign_id,
@@ -143,21 +218,42 @@ export default function CreateCalls(root) {
   }
 
   async function runFilter() {
-    const filter = getSelectedFilter(root.querySelector('#cc-filter-ui')); // { field, value } or null
-    const filters = {}; // compatible with dbFetchContacts signature
+    try {
+      // Make sure we have contacts loaded
+      if (!Array.isArray(allContacts) || !allContacts.length) {
+        allContacts = await dbFetchContacts({}) || [];
+      }
 
-    // Ask DB for rows (db helper may use ILIKE; we’ll post-filter below if a strict dropdown was chosen)
-    let rows = await dbFetchContacts(filters);
+      const filter = getActiveFilter(); // { field, operator, value } or null
+      let rows = [...allContacts];
 
-    if (filter && filter.field && filter.value != null && filter.value !== '') {
-      // Strict client-side post-filter to the EXACT selected value
-      rows = rows.filter(r => {
-        const v = (r[filter.field] ?? '').toString();
-        return v === filter.value;
-      });
+      if (filter && filter.field) {
+        const { field, operator, value } = filter;
+
+        rows = rows.filter((r) => {
+          const raw = r[field];
+          const str = raw == null ? '' : String(raw);
+
+          switch (operator) {
+            case 'equals':
+              return str === String(value ?? '');
+            case 'contains':
+              return str.toLowerCase().includes(String(value ?? '').toLowerCase());
+            case 'is_null':
+              return raw == null || str === '';
+            case 'not_null':
+              return !(raw == null || str === '');
+            default:
+              return true;
+          }
+        });
+      }
+
+      renderResults(rows);
+    } catch (e) {
+      console.error('Failed to run filter:', e);
+      alert('Error running filter. See console for details.');
     }
-
-    renderResults(rows);
   }
 
   function renderQuestions() {
@@ -251,6 +347,12 @@ export default function CreateCalls(root) {
   function updateSelectedBadge() {
     const badge = root.querySelector('#cc-count');
     if (badge) badge.textContent = `Selected: ${selected.size}`;
+  }
+
+  function prettyLabel(key) {
+    return key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (m) => m.toUpperCase());
   }
 }
 
