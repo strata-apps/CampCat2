@@ -12,16 +12,29 @@ export default function openEmailDesigner({ initial = {}, onSave, onClose } = {}
   // If initial.html exists (from older version), try to parse blocks; if not, start simple.
   // For now, we won't attempt full HTML parsing—start with one body block as a safe default.
   const defaultBlocks = [
-    { id: uid(), type: 'h1',    text: 'Your Title' },
-    { id: uid(), type: 'p',     text: 'Write your opening paragraph here. Keep it short and inviting.' },
-    { id: uid(), type: 'btn',   text: 'Call to Action', url: 'https://example.com' }
+    { id: uid(), type: 'h1',  text: 'Your Title' },
+    { id: uid(), type: 'p',   text: 'Write your opening paragraph here. Keep it short and inviting.' },
+    { id: uid(), type: 'btn', text: 'Call to Action', url: 'https://example.com' }
   ];
+
+  // If we previously saved blocks, reuse them; otherwise fall back to starter blocks
+  const initialBlocks =
+    Array.isArray(initial.blocks) && initial.blocks.length
+      ? initial.blocks.map(b => ({
+          // keep any extra props, but ensure each has an id
+          id: b.id || uid(),
+          type: b.type || 'p',
+          text: b.text || '',
+          url: b.url || ''
+        }))
+      : defaultBlocks;
 
   const state = {
     subject: initial.subject || '',
     preheader: initial.preheader || '',
-    blocks: defaultBlocks
+    blocks: initialBlocks
   };
+
 
   // --- DOM -------------------------------------------------------------------
   const backdrop = document.createElement('div');
@@ -191,9 +204,18 @@ export default function openEmailDesigner({ initial = {}, onSave, onClose } = {}
   backdrop.querySelector('[data-save]')?.addEventListener('click', () => {
     // Build final HTML and hand it back
     const html = buildHtml(state);
-    onSave?.({ subject: state.subject, preheader: state.preheader, html });
+
+    onSave?.({
+      subject: state.subject,
+      preheader: state.preheader,
+      html,
+      // 👇 This is key so we can rehydrate later
+      blocks: state.blocks
+    });
+
     close();
   });
+
   backdrop.querySelector('[data-reset]')?.addEventListener('click', () => {
     state.subject = '';
     state.preheader = '';
