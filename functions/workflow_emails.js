@@ -1,6 +1,5 @@
 // functions/workflow_emails.js
-// Opens a modal to confirm + send a workflow email via Gmail API.
-// Expects a Supabase Edge Function "workflow_email_send" to do the actual send.
+// Opens a modal to confirm + send a workflow email via Gmail API (no Edge Function).
 
 export default function openWorkflowEmailModal({
   contact,
@@ -11,7 +10,7 @@ export default function openWorkflowEmailModal({
   response,      // survey response (string or null)
   onDone,        // callback when the flow is finished (send or cancel)
 }) {
-  const supabase = globalThis.supabase;
+  const supabase = globalThis.supabase; // still available if you later want logging
 
   const to =
     contact?.contact_email ||
@@ -24,7 +23,13 @@ export default function openWorkflowEmailModal({
     template.subject ||
     `Follow-up from ${campaign?.campaign_name || 'our call'}`;
   const preheader = template.preheader || '';
-  const html = template.html || '<p>No email template has been configured for this action.</p>';
+  const html =
+    template.html ||
+    '<p>No email template has been configured for this action.</p>';
+
+  // Gmail auth state for THIS modal
+  let accessToken = null;
+  let tokenClient = null;
 
   // --- DOM helpers ----------------------------------------------------------
   const el = (tag, cls, text) => {
@@ -88,12 +93,26 @@ export default function openWorkflowEmailModal({
     <div style="font-size:13px; color:#6b7280; margin-bottom:8px;">
       This email is defined by the workflow for this campaign.
     </div>
-    <div style="font-size:13px; margin-bottom:4px;"><strong>To:</strong> ${to || '<em>No email found for this contact</em>'}</div>
-    <div style="font-size:13px; margin-bottom:4px;"><strong>Subject:</strong> ${escapeHtml(subject)}</div>
-    ${preheader ? `<div style="font-size:13px; margin-bottom:4px;"><strong>Preheader:</strong> ${escapeHtml(preheader)}</div>` : ''}
+    <div style="font-size:13px; margin-bottom:4px;"><strong>To:</strong> ${
+      to || '<em>No email found for this contact</em>'
+    }</div>
+    <div style="font-size:13px; margin-bottom:4px;"><strong>Subject:</strong> ${escapeHtml(
+      subject
+    )}</div>
+    ${
+      preheader
+        ? `<div style="font-size:13px; margin-bottom:4px;"><strong>Preheader:</strong> ${escapeHtml(
+            preheader
+          )}</div>`
+        : ''
+    }
     <div style="font-size:12px; color:#9ca3af; margin-top:8px;">
       Outcome: <code>${escapeHtml(outcome || '')}</code>
-      ${response ? ` • Response: <code>${escapeHtml(response || '')}</code>` : ''}
+      ${
+        response
+          ? ` • Response: <code>${escapeHtml(response || '')}</code>`
+          : ''
+      }
     </div>
   `;
   const previewBox = el('div');
@@ -112,7 +131,7 @@ export default function openWorkflowEmailModal({
   previewInner.style.maxWidth = '600px';
   previewInner.style.boxShadow = '0 6px 18px rgba(15,23,42,0.08)';
   previewInner.style.padding = '16px 18px';
-  previewInner.innerHTML = html; // template HTML as-is (trusted author content)
+  previewInner.innerHTML = html; // trusted author content
 
   previewBox.appendChild(previewInner);
   left.append(info, previewBox);
@@ -141,11 +160,6 @@ export default function openWorkflowEmailModal({
   signInBtn.style.color = '#4c1d95';
   signInBtn.style.fontWeight = '700';
   signInBtn.style.cursor = 'pointer';
-  signInBtn.onclick = () => {
-    // Redirect to your Google OAuth flow.
-    // You can adjust this URL to match your actual auth endpoint.
-    window.location.href = '/auth/google';
-  };
 
   rightBox.appendChild(signInBtn);
   right.appendChild(rightBox);
@@ -195,6 +209,7 @@ export default function openWorkflowEmailModal({
   backdrop.appendChild(modal);
   document.body.appendChild(backdrop);
 
+  // --- Status helpers -------------------------------------------------------
   function setStatus(msg, tone = 'default') {
     const statusEl = modal.querySelector('#wf-email-status');
     if (!statusEl) return;
@@ -214,59 +229,78 @@ export default function openWorkflowEmailModal({
     sendBtn.textContent = isOn ? 'Sending…' : 'Send Email';
   }
 
+  // --- Gmail OAuth init -----------------------------------------------------
+  (async () => {
+    try {
+      await ensureGIS();
+      const GOOGLE_CLIENT_ID =
+        window.GOOGLE_CLIENT_ID ||
+        '765883496085-itufq4k043ip181854tmcih1ka3ascmn.apps.googleusercontent.com';
+
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/gmail.send',
+        callback: (resp) => {
+          if (resp.error) {
+            console.error('OAuth error', resp);
+            setStatus('Google authorization failed. Please try again.', 'error');
+            return;
+          }
+          accessToken = resp.access_token;
+          setStatus('Connected to Gmail. Ready to send.', 'success');
+          signInBtn.textContent = 'Reauthorize Gmail';
+          signInBtn.style.display = 'inline-flex';
+        },
+      });
+
+      // Show sign-in button
+      signInBtn.style.display = 'inline-flex';
+      signInBtn.onclick = () => {
+        if (!tokenClient) return;
+        tokenClient.requestAccessToken({
+          // if we already have a token, no need to reprompt consent
+          prompt: accessToken ? '' : 'consent',
+        });
+      };
+    } catch (err) {
+      console.error('Failed to init Gmail Identity Services', err);
+      setStatus('Could not initialize Google services for email send.', 'error');
+    }
+  })();
+
+  // --- Send via Gmail -------------------------------------------------------
   async function sendEmail() {
     if (!to) {
       alert('No email address found for this contact.');
       return;
     }
-    if (!supabase?.functions) {
-      console.warn('Supabase functions client not available.');
-      alert('Email sending is not configured. Please check your Supabase setup.');
+    if (!accessToken) {
+      setStatus('Please sign in with Google before sending.', 'error');
+      signInBtn.style.display = 'inline-flex';
       return;
     }
 
     setLoading(true);
-    setStatus('Sending email via Gmail API…', 'default');
+    setStatus('Sending email via Gmail…', 'default');
 
     try {
-      const payload = {
+      const ok = await sendGmailSingle({
+        accessToken,
         to,
         subject,
+        text: stripHtml(html) || subject,
         html,
-        preheader,
-        campaignId,
-        contactId: contact?.contact_id,
-        outcome,
-        response,
-      };
+      });
 
-      const { data, error } = await supabase.functions.invoke(
-        'workflow_email_send',
-        { body: payload }
-      );
-
-      if (error) {
-        const msg = error.message || String(error);
-        console.warn('workflow_email_send error', error);
-
-        // If backend signals auth needed (401 or message), reveal Sign-In button
-        if (error.status === 401 || /auth|unauth/i.test(msg)) {
-          setStatus(
-            'Google authorization required. Please sign in, then click "Send Email" again.',
-            'error'
-          );
-          signInBtn.style.display = 'inline-flex';
-        } else {
-          setStatus('Could not send email. Please see console for details.', 'error');
-        }
+      if (!ok) {
+        setStatus('Could not send email. Check console for details.', 'error');
         return;
       }
 
       setStatus('Email sent successfully.', 'success');
-      // Slight delay so user can see success
       setTimeout(() => close(true), 500);
     } catch (err) {
-      console.error('workflow_email_send exception', err);
+      console.error('Gmail send exception', err);
       setStatus('Unexpected error sending email.', 'error');
     } finally {
       setLoading(false);
@@ -282,7 +316,11 @@ export default function openWorkflowEmailModal({
 
   function escapeHtml(s = '') {
     return String(s).replace(/[&<>"']/g, (m) => ({
-      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
     }[m]));
   }
 
@@ -292,4 +330,114 @@ export default function openWorkflowEmailModal({
     if (e.target === backdrop) close(false);
   });
   sendBtn.onclick = () => sendEmail();
+}
+
+/* ------------ Gmail helpers (single-recipient) ------------ */
+
+async function sendGmailSingle({ accessToken, to, subject, text, html }) {
+  try {
+    const raw = buildRawEmail({ to, subject, text, html });
+    const res = await fetch(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + accessToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ raw }),
+      }
+    );
+    if (!res.ok) {
+      const errTxt = await res.text();
+      console.error('❌ Gmail send failed:', errTxt);
+      return false;
+    }
+    const data = await res.json();
+    console.log('✅ Workflow email sent. Gmail id:', data.id, '→', to);
+    return true;
+  } catch (e) {
+    console.error('❌ Gmail send error:', e);
+    return false;
+  }
+}
+
+function buildRawEmail({ to, subject, text, html }) {
+  const sub = (subject || '').toString().replace(/\r?\n/g, ' ').trim();
+  const txt = (text || '').toString();
+  const htm = (html || '').toString();
+  const boundary = '=_rp_' + Math.random().toString(36).slice(2);
+  const headers = [];
+
+  if (to) headers.push(`To: ${to}`);
+
+  const asciiOnly = /^[\x00-\x7F]*$/.test(sub);
+  headers.push(
+    `Subject: ${asciiOnly ? sub : encodeRFC2047(sub)}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`
+  );
+
+  const parts = [
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    (txt || (htm ? stripHtml(htm) : '') || '').replace(/\r?\n/g, '\r\n'),
+
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    (htm || '').replace(/\r?\n/g, '\r\n'),
+
+    `--${boundary}--`,
+    '',
+  ];
+
+  const msg = headers.join('\r\n') + '\r\n\r\n' + parts.join('\r\n');
+  return base64UrlEncode(msg);
+}
+
+function stripHtml(h = '') {
+  return h
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/(p|div|h[1-6]|li|br|tr)>/gi, '$&\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function base64UrlEncode(str) {
+  const utf8 = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < utf8.length; i++) binary += String.fromCharCode(utf8[i]);
+  const b64 = btoa(binary);
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function encodeRFC2047(str) {
+  if (!str) return '';
+  if (/^[\x00-\x7F]*$/.test(str)) return str;
+  const utf8 = new TextEncoder().encode(str);
+  let hex = '';
+  for (let i = 0; i < utf8.length; i++) {
+    hex += '=' + utf8[i].toString(16).toUpperCase().padStart(2, '0');
+  }
+  return `=?UTF-8?Q?${hex.replace(/ /g, '_')}?=`;
+}
+
+async function ensureGIS() {
+  if (window.google?.accounts?.oauth2) return;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.defer = true;
+    s.onload = resolve;
+    s.onerror = () =>
+      reject(new Error('Failed to load Google Identity Services'));
+    document.head.appendChild(s);
+  });
 }
