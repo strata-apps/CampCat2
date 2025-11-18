@@ -313,6 +313,7 @@ export default async function ContactsScreen(root) {
     titleEl.insertAdjacentHTML('beforeend', `<div class="label" style="margin-top:4px">Create a new contact record.</div>`);
 
     const form = simpleContactForm();
+    
     body.appendChild(form.node);
 
     const cancel = btn('Cancel', 'btn', () => close());
@@ -335,7 +336,7 @@ export default async function ContactsScreen(root) {
     const { close, body, footer, titleEl } = buildModal('Edit Contact');
     titleEl.insertAdjacentHTML('beforeend', `<div class="label" style="margin-top:4px">Update details for <b>${escapeHtml((row.contact_first||'') + ' ' + (row.contact_last||''))}</b>.</div>`);
 
-    const form = simpleContactForm(row);
+    const form = dynamicContactForm(row);
     body.appendChild(form.node);
 
     const cancel = btn('Cancel', 'btn', () => close());
@@ -396,6 +397,66 @@ export default async function ContactsScreen(root) {
 
     return { node, getValues };
   }
+
+  function dynamicContactForm(values = {}) {
+    const node = div(null);
+
+    // Skip columns you do NOT want editable
+    const skip = new Set(['contact_id', 'created_at', 'updated_at']);
+
+    const inputs = {};
+
+    const fields = Object.keys(values || {});
+    fields.forEach((key) => {
+      if (skip.has(key)) return;
+
+      const labelText = key
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (m) => m.toUpperCase());
+
+      const wrap = div({ class: 'kv' });
+      wrap.append(el('div', 'k', labelText));
+
+      const v = div('v');
+      const inp = document.createElement('input');
+
+      // Basic type inference (optional but nice)
+      const lower = key.toLowerCase();
+      if (lower.includes('email')) inp.type = 'email';
+      else if (lower.includes('phone')) inp.type = 'tel';
+      else inp.type = 'text';
+
+      inp.value = values[key] ?? '';
+      inp.placeholder = labelText;
+
+      Object.assign(inp.style, {
+        width: '100%',
+        padding: '8px 10px',
+        border: '1px solid #d1d5db',
+        borderRadius: '8px',
+        fontFamily: 'inherit',
+        fontSize: '14px',
+      });
+
+      v.appendChild(inp);
+      wrap.appendChild(v);
+
+      inputs[key] = inp;
+      node.appendChild(wrap);
+    });
+
+    const getValues = () => {
+      const out = {};
+      for (const [key, inp] of Object.entries(inputs)) {
+        const val = inp.value.trim();
+        out[key] = val === '' ? null : val;
+      }
+      return out;
+    };
+
+    return { node, getValues };
+  }
+  
 
   function openCallModal(contact) {
     const { close, body, footer, titleEl } = buildModal('Log Call');
