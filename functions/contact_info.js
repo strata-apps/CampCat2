@@ -189,7 +189,7 @@ export function renderContactInfo(contact = {}) {
     nameBlock.appendChild(chipRow);
   }
 
-  header.append(avatar, nameBlock);
+  header.append(nameBlock);
   card.appendChild(header);
 
   // ---- primary info row (email / phone) ----

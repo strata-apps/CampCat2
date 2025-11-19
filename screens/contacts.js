@@ -465,11 +465,20 @@ export default async function ContactsScreen(root) {
       <div class="label" style="margin-top:4px">Calling <b>${escapeHtml(displayName)}</b></div>
     `);
 
-    // Reuse the shared panel to match call_execution look & fields
+    // --- Contact details section (initially hidden) ---
+    const detailsWrap = document.createElement('div');
+    Object.assign(detailsWrap.style, {
+      marginBottom: '10px',
+      display: 'none',           // hidden until user clicks the button
+    });
+    body.appendChild(detailsWrap);
+
+    // --- Call panel (unchanged) ---
     const panelBox = document.createElement('div');
     body.appendChild(panelBox);
     const panel = renderCallPanel(panelBox, { contact });
 
+    // --- Footer buttons ---
     const cancel = btn('Cancel', 'btn', () => close());
     const save   = btn('Save Call', 'btn-primary', async () => {
       try {
@@ -501,8 +510,29 @@ export default async function ContactsScreen(root) {
         log('Save single call error: ' + (e?.message || e));
       }
     });
-    footer.append(cancel, save);
+
+    // --- New: View Contact Details toggle button ---
+    let detailsVisible = false;
+    const detailsBtn = btn('View Contact Details', 'btn', () => {
+      detailsVisible = !detailsVisible;
+      if (detailsVisible) {
+        // show + render card from contact_info.js
+        detailsWrap.style.display = 'block';
+        detailsWrap.innerHTML = '';
+        const infoCard = renderContactInfo(contact);
+        detailsWrap.appendChild(infoCard);
+        detailsBtn.textContent = 'Hide Contact Details';
+      } else {
+        // hide
+        detailsWrap.style.display = 'none';
+        detailsBtn.textContent = 'View Contact Details';
+      }
+    });
+
+    // Put the new button first in the footer
+    footer.append(detailsBtn, cancel, save);
   }
+
 
 
   function buildModal(title='Modal') {
