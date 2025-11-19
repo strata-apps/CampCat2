@@ -73,22 +73,22 @@ export function renderContactInfo(contact = {}) {
   const email =
     contact.contact_email ||
     contact.email ||
-    Object.keys(contact).find((k) => /email/i.test(k) && !isEmpty(contact[k]))
+    (Object.keys(contact).find((k) => /email/i.test(k) && !isEmpty(contact[k]))
       ? contact[Object.keys(contact).find((k) => /email/i.test(k) && !isEmpty(contact[k]))]
-      : null;
+      : null);
 
   const phone =
     contact.contact_phone ||
     contact.phone ||
     contact.mobile ||
     contact.phone_number ||
-    Object.keys(contact).find((k) => /phone|mobile|cell/i.test(k) && !isEmpty(contact[k]))
+    (Object.keys(contact).find((k) => /phone|mobile|cell/i.test(k) && !isEmpty(contact[k]))
       ? contact[
           Object.keys(contact).find(
             (k) => /phone|mobile|cell/i.test(k) && !isEmpty(contact[k])
           )
         ]
-      : null;
+      : null);
 
   const gradYear =
     contact.hs_grad_year ||
@@ -101,7 +101,7 @@ export function renderContactInfo(contact = {}) {
     contact.school ||
     contact.school_name ||
     contact.high_school ||
-    contact.campus ||
+    contact.institution ||
     null;
 
   const program =
@@ -109,6 +109,38 @@ export function renderContactInfo(contact = {}) {
     contact.pathway ||
     contact.track ||
     contact.major ||
+    null;
+
+  // ---- relationship / parent-guardian fields ----
+  const guardianName =
+    contact.parent_guardian_name ||
+    contact.guardian_name ||
+    contact.parent_name ||
+    null;
+
+  const guardianRelation =
+    contact.parent_guardian_relation ||
+    contact.guardian_relation ||
+    contact.relation ||
+    null;
+
+  const preferredLanguage =
+    contact.preferred_language ||
+    contact.language_preference ||
+    contact.home_language ||
+    contact.primary_language ||
+    null;
+
+  const guardianNumber =
+    contact.parent_guardian_number ||
+    contact.guardian_number ||
+    contact.parent_phone ||
+    null;
+
+  const guardianEmail =
+    contact.parent_guardian_email ||
+    contact.guardian_email ||
+    contact.parent_email ||
     null;
 
   const avatarInitials = (() => {
@@ -128,7 +160,7 @@ export function renderContactInfo(contact = {}) {
   titleRow.style.marginBottom = '8px';
   card.appendChild(titleRow);
 
-  // ---- header (avatar + name + chips) ----
+  // ---- header (name + chips) ----
   const header = div('');
   Object.assign(header.style, {
     display: 'flex',
@@ -137,21 +169,6 @@ export function renderContactInfo(contact = {}) {
     marginBottom: '10px',
     justifyContent: 'center',
   });
-
-  const avatar = div('');
-  Object.assign(avatar.style, {
-    width: '42px',
-    height: '42px',
-    borderRadius: '999px',
-    background: 'linear-gradient(145deg, #dbeafe, #e5f3ff)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: '800',
-    color: '#1f2937',
-    fontSize: '16px',
-  });
-  avatar.textContent = avatarInitials;
 
   const nameBlock = div('');
   Object.assign(nameBlock.style, {
@@ -217,6 +234,144 @@ export function renderContactInfo(contact = {}) {
     card.appendChild(primaryRow);
   }
 
+  // ---- relationship / parent-guardian section ----
+  const hasGuardianInfo =
+    guardianName ||
+    guardianRelation ||
+    preferredLanguage ||
+    guardianNumber ||
+    guardianEmail;
+
+  let relationshipSection = null;
+
+  if (hasGuardianInfo) {
+    // Toggle button
+    const relToggle = document.createElement('button');
+    relToggle.type = 'button';
+    relToggle.textContent = 'Show Relationship Information';
+    Object.assign(relToggle.style, {
+      marginTop: '4px',
+      marginBottom: '4px',
+      borderRadius: '999px',
+      border: '1px solid rgba(148,163,184,0.6)',
+      background: 'rgba(248,250,252,0.9)',
+      padding: '6px 12px',
+      fontSize: '12px',
+      fontWeight: '600',
+      cursor: 'pointer',
+    });
+
+    relationshipSection = div('');
+    Object.assign(relationshipSection.style, {
+      display: 'none',
+      marginTop: '8px',
+      paddingTop: '8px',
+      borderTop: '1px solid rgba(148,163,184,0.35)',
+    });
+
+    // Section title
+    const relTitle = div('');
+    relTitle.textContent = 'Relationship Information';
+    Object.assign(relTitle.style, {
+      fontSize: '13px',
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: '0.08em',
+      color: '#6b7280',
+      marginBottom: '6px',
+    });
+    relationshipSection.appendChild(relTitle);
+
+    // Header: guardian name + chips (relation + language)
+    const relHeader = div('');
+    Object.assign(relHeader.style, {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: '6px',
+    });
+
+    const relNameBlock = div('');
+    Object.assign(relNameBlock.style, {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '2px',
+      alignItems: 'center',
+    });
+
+    if (guardianName) {
+      const gNameEl = div('');
+      gNameEl.textContent = guardianName;
+      Object.assign(gNameEl.style, {
+        fontSize: '15px',
+        fontWeight: '800',
+        color: '#111827',
+      });
+      relNameBlock.appendChild(gNameEl);
+    }
+
+    const relChips = div('');
+    Object.assign(relChips.style, {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '6px',
+      justifyContent: 'center',
+    });
+
+    if (guardianRelation) {
+      relChips.appendChild(makeChip(`Relation: ${guardianRelation}`));
+    }
+    if (preferredLanguage) {
+      relChips.appendChild(makeChip(`Preferred Language: ${preferredLanguage}`));
+    }
+
+    if (relChips.childNodes.length) {
+      relNameBlock.appendChild(relChips);
+    }
+
+    relHeader.appendChild(relNameBlock);
+    relationshipSection.appendChild(relHeader);
+
+    // Primary guardian contact info row
+    const relPrimaryRow = div('');
+    Object.assign(relPrimaryRow.style, {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '10px',
+      justifyContent: 'center',
+    });
+
+    if (guardianNumber) {
+      relPrimaryRow.appendChild(
+        primaryItem('📞', 'Parent/Guardian Number', guardianNumber)
+      );
+    }
+
+    if (guardianEmail) {
+      const item = primaryItem('✉️', 'Parent/Guardian Email', guardianEmail);
+      const vEl = item.querySelector('.v');
+      if (vEl) vEl.style.wordBreak = 'break-all';
+      relPrimaryRow.appendChild(item);
+    }
+
+    if (relPrimaryRow.childNodes.length) {
+      relationshipSection.appendChild(relPrimaryRow);
+    }
+
+    // Wire toggle
+    let relExpanded = false;
+    relToggle.addEventListener('click', () => {
+      relExpanded = !relExpanded;
+      relationshipSection.style.display = relExpanded ? 'block' : 'none';
+      relToggle.textContent = relExpanded
+        ? 'Hide Relationship Information'
+        : 'Show Relationship Information';
+    });
+
+    card.appendChild(relToggle);
+    card.appendChild(relationshipSection);
+  }
+
   // ---- secondary fields (everything else) ----
   const PRIMARY_KEYS = new Set([
     'contact_first',
@@ -244,6 +399,24 @@ export function renderContactInfo(contact = {}) {
     'pathway',
     'track',
     'major',
+
+    // guardian / relationship-related keys (handled separately)
+    'parent_guardian_name',
+    'guardian_name',
+    'parent_name',
+    'parent_guardian_relation',
+    'guardian_relation',
+    'relation',
+    'parent_guardian_number',
+    'guardian_number',
+    'parent_phone',
+    'parent_guardian_email',
+    'guardian_email',
+    'parent_email',
+    'preferred_language',
+    'language_preference',
+    'home_language',
+    'primary_language',
   ]);
 
   const secondaryPairs = allPairs.filter(([_, __, key]) => !PRIMARY_KEYS.has(key));
