@@ -98,7 +98,6 @@ export default async function CallExecution(root) {
 
   root.innerHTML = `
     <section class="page-head">
-      <h1 class="page-title">Unified Calling</h1>
       <div class="subtle">Campaign: <span id="exec-campaign-id">${campaign_id}</span></div>
     </section>
     <div id="exec-wrap"></div>
