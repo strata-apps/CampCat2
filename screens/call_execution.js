@@ -452,7 +452,7 @@ export default async function CallExecution(root) {
 
     phoneWrap.appendChild(callBtn);
     head.append(title, phoneWrap);
-    wrap.append(head);
+    // wrap.append(head);
 
     // Contact info
     const infoCard = renderContactInfo(c);
