@@ -10,16 +10,14 @@
 //  - "Edit" opens a modal to update the contact row in public.contacts
 //  - "New Contact" opens a modal to insert a contact into public.contacts
 //
-// Calling modal UI is modeled after patterns in call_execution.js (layout/fields/flow).  :contentReference[oaicite:1]{index=1}
+// Calling modal UI is modeled after patterns in call_execution.js (layout/fields/flow).
 
 import { mountContactFilters, getSelectedFilter } from '../functions/filters.js';
 import { openProfileModal } from '../functions/profile.js';
 import { renderContactInfo } from '../functions/contact_info.js';
 import { renderCallPanel } from '../functions/call_panel.js';
 import { openAddVariableModal } from '../functions/add_variable.js';
-
-
-
+import { openMassUploadModal } from '../functions/mass_upload.js';  // ✅ NEW
 
 export default async function ContactsScreen(root) {
   root.innerHTML = '';
@@ -47,46 +45,81 @@ export default async function ContactsScreen(root) {
     if (on) b.onclick = on;
     return b;
   };
-  const escapeHtml = (s='') => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const escapeHtml = (s = '') =>
+    String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   const nowIso = () => new Date().toISOString();
 
   /* ------------------------------ shell ------------------------------ */
-  const head = div('page-head',
+  const head = div(
+    'page-head',
     el('h1', { class: 'page-title' }, 'Contacts'),
     el('div', { class: 'label' }, 'Browse, filter, and manage contacts. Log individual calls or edit details.')
   );
 
-  const bar = div({ class: 'card', style: { display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' } },
-    div(null,
+  const bar = div(
+    {
+      class: 'card',
+      style: {
+        display: 'flex',
+        gap: '12px',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+      },
+    },
+    div(
+      null,
       el('div', { class: 'kicker' }, 'Filters'),
       el('div', { class: 'label' }, 'Use the dropdowns to narrow contacts; then export or call / edit.')
     ),
-    div(null,
+    div(
+      null,
       btn('New Contact', 'btn', () => openCreateContactModal()),
       btn('Export CSV', 'btn', () => exportCSV()),
-      btn('Add Column', 'btn', () =>
-        openAddVariableModal({
-          onSuccess: async (newCol) => {
-            // Re-query so the new column appears immediately in the dynamic table & CSV
-            await renderList();
-          }
+      btn(
+        'Add Column',
+        'btn',
+        () =>
+          openAddVariableModal({
+            onSuccess: async newCol => {
+              // Re-query so the new column appears immediately in the dynamic table & CSV
+              await renderList();
+            },
+          })
+      ),
+      // ✅ NEW: Mass Upload button wired to helper in functions/mass_upload.js
+      btn('Mass Upload', 'btn', () =>
+        openMassUploadModal({
+          getCurrentRows: () => currentRows,
+          onDone: async summary => {
+            if (summary) log(summary);
+            await renderList(); // refresh table after upload
+          },
         })
       )
     )
   );
-  const filterRow = div({ class: 'latest-row', style: { gap: '8px', flexWrap: 'wrap', marginTop: '8px' } });
+
+  const filterRow = div({
+    class: 'latest-row',
+    style: { gap: '8px', flexWrap: 'wrap', marginTop: '8px' },
+  });
   bar.appendChild(filterRow);
 
-  const listCard = div('card',
+  const listCard = div(
+    'card',
     el('div', { class: 'kicker' }, 'Directory'),
     el('div', { class: 'big' }, 'Contacts Table'),
     el('div', { class: 'label', style: { marginTop: '6px' } }, 'Click a first name to call or edit.')
   );
+
   // Outer wrapper with scroll buttons
-    const listWrap = el('div', { style: {
+  const listWrap = el('div', {
+    style: {
       position: 'relative',
-      marginTop: '10px'
-    }});
+      marginTop: '10px',
+    },
+  });
 
   // Scrollable container
   const scrollBox = el('div', {
@@ -97,44 +130,51 @@ export default async function ContactsScreen(root) {
       border: '1px solid #e5e7eb',
       borderRadius: '8px',
       padding: '4px',
-      scrollBehavior: 'smooth'
-    }
+      scrollBehavior: 'smooth',
+    },
   });
 
   // Add left/right scroll buttons
-  const leftBtn = el('button', {
-    class: 'btn',
-    style: {
-      position: 'absolute',
-      left: '5px',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      zIndex: 10,
-      opacity: 0.85
+  const leftBtn = el(
+    'button',
+    {
+      class: 'btn',
+      style: {
+        position: 'absolute',
+        left: '5px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        zIndex: 10,
+        opacity: 0.85,
+      },
+      onclick: () => scrollBox.scrollBy({ left: -300, behavior: 'smooth' }),
     },
-    onclick: () => scrollBox.scrollBy({ left: -300, behavior: 'smooth' })
-  }, '⟨');
+    '⟨'
+  );
 
-  const rightBtn = el('button', {
-    class: 'btn',
-    style: {
-      position: 'absolute',
-      right: '5px',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      zIndex: 10,
-      opacity: 0.85
+  const rightBtn = el(
+    'button',
+    {
+      class: 'btn',
+      style: {
+        position: 'absolute',
+        right: '5px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        zIndex: 10,
+        opacity: 0.85,
+      },
+      onclick: () => scrollBox.scrollBy({ left: 300, behavior: 'smooth' }),
     },
-    onclick: () => scrollBox.scrollBy({ left: 300, behavior: 'smooth' })
-  }, '⟩');
+    '⟩'
+  );
 
   // Assemble
   listWrap.append(leftBtn, scrollBox, rightBtn);
   listCard.appendChild(listWrap);
 
-
-
-  const logCard = div('card',
+  const logCard = div(
+    'card',
     el('div', { class: 'kicker' }, 'Status'),
     el('pre', { id: 'log', class: 'label', style: { whiteSpace: 'pre-wrap', margin: 0 } }, 'Ready.')
   );
@@ -149,7 +189,7 @@ export default async function ContactsScreen(root) {
   filterRow.appendChild(applyBtn);
 
   /* --------------------------- view state --------------------------- */
-  let currentRows = []; // rows currently displayed (for CSV export)
+  let currentRows = []; // rows currently displayed (for CSV export and mass upload helper)
 
   /* ----------------------------- actions ---------------------------- */
   await renderList();
@@ -163,11 +203,11 @@ export default async function ContactsScreen(root) {
     }
 
     // Build base select of useful columns (adjust to your schema)
-    let query = s.from('contacts')
+    let query = s
+      .from('contacts')
       .select('*')
       .order('contact_last', { ascending: true })
       .order('contact_first', { ascending: true });
-
 
     // Apply selected filter(s)
     const sel = getSelectedFilter(filterRow);
@@ -182,14 +222,14 @@ export default async function ContactsScreen(root) {
     const { data, error } = await query.limit(2000);
     if (error) {
       log('Load error: ' + error.message);
-      const msg = div(null,
+      const msg = div(
+        null,
         div('label', 'Error loading contacts.'),
         div('label', 'Details: ' + (error.message || 'Unknown'))
       );
       scrollBox.appendChild(msg);
       return;
     }
-
 
     currentRows = data || [];
 
@@ -207,8 +247,8 @@ export default async function ContactsScreen(root) {
 
     // Final column order: preferred first (if present), then the rest
     const orderedKeys = [
-    ...preferredOrder.filter(k => keys.includes(k)),
-    ...keys.filter(k => !preferredOrder.includes(k)),
+      ...preferredOrder.filter(k => keys.includes(k)),
+      ...keys.filter(k => !preferredOrder.includes(k)),
     ];
 
     // Create table + dynamic thead
@@ -218,18 +258,26 @@ export default async function ContactsScreen(root) {
 
     // Actions header always first
     htr.appendChild(
-      el('th', {
-        style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;'
-      }, 'Actions')
+      el(
+        'th',
+        {
+          style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;',
+        },
+        'Actions'
+      )
     );
 
     // Dynamic headers
     orderedKeys.forEach(k => {
       const label = k.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase());
       htr.appendChild(
-        el('th', {
-          style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;'
-        }, label)
+        el(
+          'th',
+          {
+            style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.08);text-align:left;',
+          },
+          label
+        )
       );
     });
 
@@ -241,21 +289,28 @@ export default async function ContactsScreen(root) {
     for (const r of currentRows) {
       const tr = document.createElement('tr');
 
-    // Actions (Call / Edit / View Profile)
-      const actions = el('td', { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' },
-        div({ style: { display: 'flex', gap: '6px' } },
+      // Actions (Call / Edit / View Profile)
+      const actions = el(
+        'td',
+        { style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)' },
+        div(
+          { style: { display: 'flex', gap: '6px' } },
           btn('Call', 'btn', () => openCallModal(r)),
           btn('Edit', 'btn', () => openEditContactModal(r)),
-          btn('View Profile', 'btn', () => openProfileModal(r)),
+          btn('View Profile', 'btn', () => openProfileModal(r))
         )
       );
       tr.appendChild(actions);
 
       // Dynamic cells in the preferred/ordered order
       orderedKeys.forEach(k => {
-        const td = el('td', {
-          style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)'
-        }, r[k] == null ? '—' : escapeHtml(String(r[k])));
+        const td = el(
+          'td',
+          {
+            style: 'padding:10px;border-bottom:1px solid rgba(0,0,0,.06)',
+          },
+          r[k] == null ? '—' : escapeHtml(String(r[k]))
+        );
         tr.appendChild(td);
       });
 
@@ -263,7 +318,6 @@ export default async function ContactsScreen(root) {
     }
 
     scrollBox.appendChild(table);
-
   }
 
   function exportCSV() {
@@ -271,27 +325,31 @@ export default async function ContactsScreen(root) {
 
     // Collect all keys that appear across the current rows
     const allKeys = Array.from(
-        currentRows.reduce((set, row) => {
+      currentRows.reduce((set, row) => {
         Object.keys(row || {}).forEach(k => set.add(k));
         return set;
-        }, new Set())
+      }, new Set())
     );
 
     const header = allKeys.join(',');
     const lines = [header];
 
     for (const r of currentRows) {
-        const row = allKeys.map(k => csvCell(r[k]));
-        lines.push(row.join(','));
+      const row = allKeys.map(k => csvCell(r[k]));
+      lines.push(row.join(','));
     }
 
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'contacts.csv';
+    a.href = url;
+    a.download = 'contacts.csv';
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 0);
   }
 
   function csvCell(v) {
@@ -310,14 +368,17 @@ export default async function ContactsScreen(root) {
 
   function openCreateContactModal() {
     const { close, body, footer, titleEl } = buildModal('New Contact');
-    titleEl.insertAdjacentHTML('beforeend', `<div class="label" style="margin-top:4px">Create a new contact record.</div>`);
+    titleEl.insertAdjacentHTML(
+      'beforeend',
+      `<div class="label" style="margin-top:4px">Create a new contact record.</div>`
+    );
 
     const form = simpleContactForm();
-    
+
     body.appendChild(form.node);
 
     const cancel = btn('Cancel', 'btn', () => close());
-    const save   = btn('Save Contact', 'btn-primary', async () => {
+    const save = btn('Save Contact', 'btn-primary', async () => {
       try {
         const payload = form.getValues();
         const { error } = await window.supabase.from('contacts').insert(payload);
@@ -334,16 +395,22 @@ export default async function ContactsScreen(root) {
 
   function openEditContactModal(row) {
     const { close, body, footer, titleEl } = buildModal('Edit Contact');
-    titleEl.insertAdjacentHTML('beforeend', `<div class="label" style="margin-top:4px">Update details for <b>${escapeHtml((row.contact_first||'') + ' ' + (row.contact_last||''))}</b>.</div>`);
+    titleEl.insertAdjacentHTML(
+      'beforeend',
+      `<div class="label" style="margin-top:4px">Update details for <b>${escapeHtml(
+        (row.contact_first || '') + ' ' + (row.contact_last || '')
+      )}</b>.</div>`
+    );
 
     const form = dynamicContactForm(row);
     body.appendChild(form.node);
 
     const cancel = btn('Cancel', 'btn', () => close());
-    const save   = btn('Save Changes', 'btn-primary', async () => {
+    const save = btn('Save Changes', 'btn-primary', async () => {
       try {
         const payload = form.getValues();
-        const { error } = await window.supabase.from('contacts')
+        const { error } = await window.supabase
+          .from('contacts')
           .update(payload)
           .eq('contact_id', row.contact_id);
         if (error) throw error;
@@ -360,7 +427,7 @@ export default async function ContactsScreen(root) {
   function simpleContactForm(values = {}) {
     const node = div(null);
 
-    const row = (label, key, type='text', placeholder='') => {
+    const row = (label, key, type = 'text', placeholder = '') => {
       const wrap = div({ class: 'kv' });
       wrap.append(el('div', 'k', label));
       const v = div('v');
@@ -374,7 +441,7 @@ export default async function ContactsScreen(root) {
         border: '1px solid #d1d5db',
         borderRadius: '8px',
         fontFamily: 'inherit',
-        fontSize: '14px'
+        fontSize: '14px',
       });
       v.appendChild(inp);
       wrap.appendChild(v);
@@ -382,15 +449,15 @@ export default async function ContactsScreen(root) {
     };
 
     const r1 = row('First Name', 'contact_first', 'text', 'First name');
-    const r2 = row('Last Name',  'contact_last',  'text', 'Last name');
-    const r3 = row('Email',      'contact_email', 'email', 'name@example.org');
-    const r4 = row('Phone',      'contact_phone', 'tel', '(123) 456-7890');
+    const r2 = row('Last Name', 'contact_last', 'text', 'Last name');
+    const r3 = row('Email', 'contact_email', 'email', 'name@example.org');
+    const r4 = row('Phone', 'contact_phone', 'tel', '(123) 456-7890');
 
     node.append(r1.wrap, r2.wrap, r3.wrap, r4.wrap);
 
     const getValues = () => ({
       contact_first: r1.inp.value.trim() || null,
-      contact_last:  r2.inp.value.trim() || null,
+      contact_last: r2.inp.value.trim() || null,
       contact_email: r3.inp.value.trim() || null,
       contact_phone: r4.inp.value.trim() || null,
     });
@@ -407,12 +474,12 @@ export default async function ContactsScreen(root) {
     const inputs = {};
 
     const fields = Object.keys(values || {});
-    fields.forEach((key) => {
+    fields.forEach(key => {
       if (skip.has(key)) return;
 
       const labelText = key
         .replace(/_/g, ' ')
-        .replace(/\b\w/g, (m) => m.toUpperCase());
+        .replace(/\b\w/g, m => m.toUpperCase());
 
       const wrap = div({ class: 'kv' });
       wrap.append(el('div', 'k', labelText));
@@ -456,20 +523,23 @@ export default async function ContactsScreen(root) {
 
     return { node, getValues };
   }
-  
 
   function openCallModal(contact) {
     const { close, body, footer, titleEl } = buildModal('Log Call');
-    const displayName = [contact.contact_first, contact.contact_last].filter(Boolean).join(' ').trim() || 'Contact';
-    titleEl.insertAdjacentHTML('beforeend', `
+    const displayName =
+      [contact.contact_first, contact.contact_last].filter(Boolean).join(' ').trim() || 'Contact';
+    titleEl.insertAdjacentHTML(
+      'beforeend',
+      `
       <div class="label" style="margin-top:4px">Calling <b>${escapeHtml(displayName)}</b></div>
-    `);
+    `
+    );
 
     // --- Contact details section (initially hidden) ---
     const detailsWrap = document.createElement('div');
     Object.assign(detailsWrap.style, {
       marginBottom: '10px',
-      display: 'none',           // hidden until user clicks the button
+      display: 'none', // hidden until user clicks the button
     });
     body.appendChild(detailsWrap);
 
@@ -480,10 +550,12 @@ export default async function ContactsScreen(root) {
 
     // --- Footer buttons ---
     const cancel = btn('Cancel', 'btn', () => close());
-    const save   = btn('Save Call', 'btn-primary', async () => {
+    const save = btn('Save Call', 'btn-primary', async () => {
       try {
         const s = window.supabase;
-        const { data: { user } } = await s.auth.getUser();
+        const {
+          data: { user },
+        } = await s.auth.getUser();
         const user_id = user?.id || null;
 
         const core = panel.getPayload();
@@ -497,7 +569,7 @@ export default async function ContactsScreen(root) {
           call_time: now,
           update_time: now,
           last_called_at: now,
-          contact_id: contact.contact_id
+          contact_id: contact.contact_id,
         };
 
         const { error } = await s.from('single_calls').insert(payload);
@@ -533,31 +605,47 @@ export default async function ContactsScreen(root) {
     footer.append(detailsBtn, cancel, save);
   }
 
-
-
-  function buildModal(title='Modal') {
-    const wrap = el('div', { style: {
-      position:'fixed', inset:'0', background:'rgba(0,0,0,.28)', zIndex:9999,
-      display:'flex', alignItems:'center', justifyContent:'center'
-    }});
-    const card = el('div', { class:'card', style: {
-      width:'min(760px, 92vw)', maxHeight:'82vh', display:'flex', flexDirection:'column',
-      padding:'16px', gap:'10px', overflow:'hidden'
-    }});
-    const head = el('div', { style:{ display:'flex', justifyContent:'space-between', alignItems:'center' }});
-    const titleBox = el('div', null,
-      el('div','kicker','Details'),
-      el('div','big',title)
-    );
-    const x = btn('✕','btn', () => close());
-    const body = el('div', { style:{ overflow:'auto', padding:'4px 2px' }});
-    const footer = el('div', { style:{ display:'flex', justifyContent:'flex-end', gap:'8px' }});
+  function buildModal(title = 'Modal') {
+    const wrap = el('div', {
+      style: {
+        position: 'fixed',
+        inset: '0',
+        background: 'rgba(0,0,0,.28)',
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+    });
+    const card = el('div', {
+      class: 'card',
+      style: {
+        width: 'min(760px, 92vw)',
+        maxHeight: '82vh',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '16px',
+        gap: '10px',
+        overflow: 'hidden',
+      },
+    });
+    const head = el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } });
+    const titleBox = el('div', null, el('div', 'kicker', 'Details'), el('div', 'big', title));
+    const x = btn('✕', 'btn', () => close());
+    const body = el('div', { style: { overflow: 'auto', padding: '4px 2px' } });
+    const footer = el('div', {
+      style: { display: 'flex', justifyContent: 'flex-end', gap: '8px' },
+    });
     head.append(titleBox, x);
     card.append(head, body, footer);
     wrap.append(card);
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+    wrap.addEventListener('click', e => {
+      if (e.target === wrap) close();
+    });
     document.body.appendChild(wrap);
-    function close(){ wrap.remove(); }
+    function close() {
+      wrap.remove();
+    }
     return { close, body, footer, titleEl: titleBox };
   }
 }
