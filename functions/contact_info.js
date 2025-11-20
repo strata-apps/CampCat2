@@ -91,7 +91,7 @@ export function renderContactInfo(contact = {}) {
       : null);
 
   const gradYear =
-    contact.hs_grad_year ||
+    contact.grade ||
     contact.hs_grad ||
     contact.grad_year ||
     contact.graduation_year ||
