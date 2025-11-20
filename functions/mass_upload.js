@@ -191,6 +191,25 @@ export function openMassUploadModal(opts = {}) {
       progressBox.textContent += `\n${summary}`;
       logger(summary);
 
+      // ★ Add a nice green success message under the progressBox ★
+      const successBanner = document.createElement('div');
+      Object.assign(successBanner.style, {
+        marginTop: '12px',
+        padding: '12px 14px',
+        borderRadius: '8px',
+        background: '#e6f9ee',
+        border: '1px solid #b6eccc',
+        color: '#0f5132',
+        fontSize: '14px',
+        fontWeight: '600',
+        textAlign: 'center',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.08)',
+      });
+      successBanner.textContent = "✅ Mass Upload Complete! All contacts were successfully merged.";
+
+      // Append below progress box
+      progressBox.after(successBanner);
+
       if (typeof onDone === 'function') {
         await onDone(summary);
       }
