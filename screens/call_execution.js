@@ -160,7 +160,9 @@ export default async function CallExecution(root) {
 
       progressRows = prog || [];
 
-      let idSet = new Set((prog || []).map(r => r.contact_id));
+      // Build idSet starting from the campaign.contact_ids (full list),
+      // then union in any contact_ids that appear in progress rows
+      let idSet = new Set();
 
       // 2) Load campaign row (contact_ids + workflow + survey settings)
       const { data: cc, error: ccErr } = await s
@@ -172,12 +174,18 @@ export default async function CallExecution(root) {
       if (ccErr) throw ccErr;
       parentCampaign = cc || null;
 
-      // If no progress yet, seed queue from campaign.contact_ids
-      if (!idSet.size && cc?.contact_ids?.length) {
-        idSet = new Set(cc.contact_ids);
+      if (cc?.contact_ids?.length) {
+        cc.contact_ids.forEach((id) => {
+          if (id != null) idSet.add(id);
+        });
       }
 
+      (progressRows || []).forEach((row) => {
+        if (row.contact_id != null) idSet.add(row.contact_id);
+      });
+
       queue = [...idSet];
+
 
       // 3) Parse workflow TEXT -> JSON and compute "next call action" + email actions
       workflowMeta = null;
@@ -498,17 +506,21 @@ export default async function CallExecution(root) {
 
   /* -------------------------- Navigation -------------------------- */
   function onBack() {
-    if (index > 0) { index -= 1; render(); }
+    if (index > 0) {
+      index -= 1;
+      renderLive();   // stay in the live calling view
+    }
   }
   function next() {
     if (index < queue.length - 1) {
       index += 1;
-      render();
+      renderLive();   // go to next contact in live UI
     } else {
       // finished -> summary
       renderSummary();
     }
   }
+
 
   /* ------------------------- Persist outcome + EMAIL HOOK ---------------------- */
   async function onOutcome(kind) {
