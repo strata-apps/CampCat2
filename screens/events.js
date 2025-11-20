@@ -136,6 +136,7 @@ export default async function EventsScreen(root) {
       ),
       div({ style: { display: 'flex', gap: '8px', alignItems: 'center' } },
         btn('Edit Attendance', 'btn', () => openEditAttendanceModal(ev)),
+        btn('Export CSV', 'btn', () => exportEventCSV(ev)),   // 👈 NEW
         btn('Delete', 'btn', () => deleteEvent(ev))
       )
     );
@@ -239,6 +240,115 @@ export default async function EventsScreen(root) {
       alert('Failed to delete event.\n' + (e?.message || e));
     }
   }
+
+  // ---------- export attendance as CSV ----------
+  async function exportEventCSV(ev) {
+    try {
+      const s = sup();
+      if (!s) {
+        alert('Supabase client not available.');
+        return;
+      }
+
+      const ids = Array.isArray(ev.contact_ids) ? ev.contact_ids.map(String) : [];
+      if (!ids.length) {
+        alert('This event has no recorded attendance to export.');
+        return;
+      }
+
+      // Get contacts for this event's attendees
+      const { data, error } = await s
+        .from('contacts')
+        .select('contact_id, contact_first, contact_last, contact_email')
+        .in('contact_id', ids);
+
+      if (error) throw error;
+
+      const rows = Array.isArray(data) ? data.slice() : [];
+
+      // Sort by last, then first (like attendance/profile views)
+      rows.sort((a, b) => {
+        const lastA = (a.contact_last || '').toLowerCase();
+        const lastB = (b.contact_last || '').toLowerCase();
+        if (lastA < lastB) return -1;
+        if (lastA > lastB) return 1;
+        const firstA = (a.contact_first || '').toLowerCase();
+        const firstB = (b.contact_first || '').toLowerCase();
+        if (firstA < firstB) return -1;
+        if (firstA > firstB) return 1;
+        return 0;
+      });
+
+      // Build CSV
+      const header = [
+        'Event Name',
+        'Event Date',
+        'Contact ID',
+        'First Name',
+        'Last Name',
+        'Email'
+      ];
+
+      const eventDateStr = ev.event_date
+        ? new Date(ev.event_date).toLocaleDateString()
+        : '';
+
+      const lines = [];
+      lines.push(header.map(csvEscape).join(','));
+
+      for (const c of rows) {
+        const line = [
+          ev.event_name || '',
+          eventDateStr,
+          c.contact_id || '',
+          c.contact_first || '',
+          c.contact_last || '',
+          c.contact_email || ''
+        ].map(csvEscape).join(',');
+        lines.push(line);
+      }
+
+      const csv = lines.join('\n');
+
+      // Download in browser
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+
+      // Safe-ish filename: event-name_YYYY-MM-DD.csv
+      const baseName = (ev.event_name || 'event')
+        .toString()
+        .trim()
+        .replace(/[^\w\-]+/g, '_');
+
+      const datePart = ev.event_date
+        ? new Date(ev.event_date).toISOString().slice(0, 10)
+        : 'attendance';
+
+      const fileName = `${baseName}_${datePart}_attendance.csv`;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('[events] exportEventCSV failed', e);
+      alert('Failed to export CSV.\n' + (e?.message || e));
+    }
+  }
+
+  // Small CSV escaper (wraps in quotes when needed)
+  function csvEscape(value) {
+    const s = value == null ? '' : String(value);
+    if (/[",\n]/.test(s)) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+
 
   // ---------- contact chooser (multi-select with search, select all/clear) ----------
   function renderContactChooser({ selected = new Set() } = {}) {
