@@ -182,7 +182,7 @@ export function renderContactInfo(contact = {}) {
     const nameEl = div('');
     nameEl.textContent = displayName;
     Object.assign(nameEl.style, {
-      fontSize: '16px',
+      fontSize: '24px',
       fontWeight: '800',
       color: '#111827',
     });
