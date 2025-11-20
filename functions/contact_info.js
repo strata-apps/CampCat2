@@ -199,7 +199,7 @@ export function renderContactInfo(contact = {}) {
   });
 
   if (school) chipRow.appendChild(makeChip(school));
-  if (gradYear) chipRow.appendChild(makeChip(`Class of ${gradYear}`));
+  if (gradYear) chipRow.appendChild(makeChip(`${gradYear}`));
   if (program) chipRow.appendChild(makeChip(program));
 
   if (chipRow.childNodes.length) {
