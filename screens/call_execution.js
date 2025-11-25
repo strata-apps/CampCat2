@@ -7,8 +7,10 @@ import { createDataCollection } from '../functions/data_collection.js';
 import { renderTasks } from '../functions/tasks_function.js';
 import { renderCampaignInsights } from '../functions/charts.js';
 import { renderCampaignSummaryTable } from '../functions/summary_table.js';
-import openWorkflowEmailModal from '../functions/workflow_emails.js'; // 👈 NEW
+import openWorkflowEmailModal from '../functions/workflow_emails.js'; 
 import { renderAttendance } from '../functions/attendance.js';
+import { updateEngagementIndicatorsForContacts } from '../functions/engagement_indicator.js';
+
 
 
 /* ------------------------- route helpers ------------------------- */
@@ -185,6 +187,9 @@ export default async function CallExecution(root) {
       });
 
       queue = [...idSet];
+
+      // engagement indicator
+      await updateEngagementIndicatorsForContacts(queue);
 
 
       // 3) Parse workflow TEXT -> JSON and compute "next call action" + email actions

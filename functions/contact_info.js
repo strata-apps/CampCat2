@@ -111,6 +111,13 @@ export function renderContactInfo(contact = {}) {
     contact.major ||
     null;
 
+  // 🔥 engagement indicator
+  const indicatorScore =
+    contact.indicator != null
+      ? Number(contact.indicator)
+      : 0;
+  const isHighEngagement = indicatorScore > 0;
+
   // ---- relationship / parent-guardian fields ----
   const guardianName =
     contact.parent_guardian_name ||
@@ -189,7 +196,7 @@ export function renderContactInfo(contact = {}) {
     nameBlock.appendChild(nameEl);
   }
 
-  // Chips row (school / grad year / program)
+  // Chips row (school / grad year / program / engagement)
   const chipRow = div('');
   Object.assign(chipRow.style, {
     display: 'flex',
@@ -202,9 +209,17 @@ export function renderContactInfo(contact = {}) {
   if (gradYear) chipRow.appendChild(makeChip(`${gradYear}`));
   if (program) chipRow.appendChild(makeChip(program));
 
+  // 🔥 High engagement chip
+  if (isHighEngagement) {
+    const chip = makeChip('🔥 High Engagement');
+    chip.title = `Engagement score: ${indicatorScore}`;
+    chipRow.appendChild(chip);
+  }
+
   if (chipRow.childNodes.length) {
     nameBlock.appendChild(chipRow);
   }
+
 
   header.append(nameBlock);
   card.appendChild(header);
