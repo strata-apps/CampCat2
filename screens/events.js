@@ -797,10 +797,10 @@ export default async function EventsScreen(root) {
     //
     // Or if you have a global gmail client on window:
     //
-    // const gmail = window.gmailClient;
-    // for (const to of uniq) {
-    //   await gmail.send({ to, subject, html });
-    // }
+    const gmail = window.gmailClient;
+    for (const to of uniq) {
+      await gmail.send({ to, subject, html });
+    }
 
     console.log('[events] sendBulkEmail (stub): would send to', uniq);
   }
