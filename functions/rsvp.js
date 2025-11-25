@@ -104,6 +104,23 @@ async function renderRsvpContent({ s, ev, body, footer, close }) {
   const combinedIds = new Set([...autoIds, ...manualIds]);
   const combinedArr = Array.from(combinedIds);
 
+    // 🔹 NEW: persist the union of auto + manual RSVPs into events.rsvp_ids
+    // Only bother writing if there is at least one RSVP.
+  if (combinedArr.length) {
+    try {
+        const { error: unionErr } = await s
+        .from('events')
+        .update({ rsvp_ids: combinedArr })
+        .eq('event_id', ev.event_id);
+
+        if (unionErr) {
+        console.error('[rsvp] failed to update rsvp_ids with combined RSVPs', unionErr);
+        }
+    } catch (e) {
+        console.error('[rsvp] unexpected error updating rsvp_ids', e);
+    }
+  }
+
   body.innerHTML = '';
 
   // Summary + info
