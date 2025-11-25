@@ -90,7 +90,7 @@ export default async function EventsScreen(root) {
     }
 
     const { data, error } = await s.from('events')
-      .select('event_id, event_name, contact_ids, event_date', 'campaign_id')
+      .select('event_id, event_name, contact_ids, event_date', 'campaign_id', 'rsvp_ids')
       .order('event_date', { ascending: false })
       .limit(1000);
 
