@@ -3,6 +3,9 @@
 // Table: public.events(event_id, event_name, contact_ids json, event_date)
 // Requires: window.supabase client
 
+import { openRsvpModal } from '../functions/rsvp.js';
+
+
 export default async function EventsScreen(root) {
   const sup = () => window.supabase;
   root.innerHTML = '';
@@ -87,7 +90,7 @@ export default async function EventsScreen(root) {
     }
 
     const { data, error } = await s.from('events')
-      .select('event_id, event_name, contact_ids, event_date')
+      .select('event_id, event_name, contact_ids, event_date', 'campaign_id')
       .order('event_date', { ascending: false })
       .limit(1000);
 
@@ -134,9 +137,14 @@ export default async function EventsScreen(root) {
           div(null, el('div', 'label', 'Total Attendance'), el('div', null, String(attendance))),
         )
       ),
-      div({ style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+      div({ style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
+        // RSVP / Campaign button
+        ev.campaign_id
+          ? btn('View RSVP', 'btn', () => openRsvpModal(ev))
+          : btn('Link Campaign', 'btn', () => openLinkCampaignModal(ev)),
+
         btn('Edit Attendance', 'btn', () => openEditAttendanceModal(ev)),
-        btn('Export CSV', 'btn', () => exportEventCSV(ev)),   // 👈 NEW
+        btn('Export CSV', 'btn', () => exportEventCSV(ev)),
         btn('Delete', 'btn', () => deleteEvent(ev))
       )
     );
@@ -199,6 +207,78 @@ export default async function EventsScreen(root) {
 
     footer.append(cancel, save);
   }
+
+  // ---------- link campaign modal ----------
+    // ---------- link campaign to event ----------
+  function openLinkCampaignModal(ev) {
+    const { close, body, footer, titleEl } = buildModal('Link Call Campaign');
+    titleEl.appendChild(el('div', 'label', `Attach a call campaign to “${ev.event_name}” so RSVPs can sync automatically from call responses.`));
+
+    const note = el('div', 'label',
+      'Paste the campaign_id from your call_campaigns table. Any contacts who responded "Yes" in that campaign will appear in the RSVP list.'
+    );
+    note.style.marginBottom = '8px';
+
+    const input = document.createElement('input');
+    input.placeholder = 'campaign_id (UUID)';
+    styleInput(input);
+
+    body.append(
+      note,
+      div({ class: 'kv' },
+        el('div', 'k', 'campaign_id'),
+        el('div', 'v', input)
+      )
+    );
+
+    const cancel = btn('Cancel', 'btn', () => close());
+    const save = btn('Save Link', 'btn-primary', async () => {
+      const raw = (input.value || '').trim();
+      if (!raw) {
+        alert('Please paste a campaign_id.');
+        return;
+      }
+
+      try {
+        const s = sup();
+
+        // Optional: verify the campaign exists
+        const { data: camp, error: cErr } = await s
+          .from('call_campaigns')
+          .select('campaign_id, campaign_name')
+          .eq('campaign_id', raw)
+          .maybeSingle();
+
+        if (cErr) {
+          console.error('[events] call_campaigns lookup error', cErr);
+        }
+
+        if (!camp) {
+          const ok = confirm(
+            'No call campaign was found with that campaign_id.\n\n' +
+            'Do you still want to link it?'
+          );
+          if (!ok) return;
+        }
+
+        const { error } = await s
+          .from('events')
+          .update({ campaign_id: raw })
+          .eq('event_id', ev.event_id);
+
+        if (error) throw error;
+
+        close();
+        await renderList();
+      } catch (e) {
+        console.error('[events] link campaign failed', e);
+        alert('Failed to link campaign.\n' + (e?.message || e));
+      }
+    });
+
+    footer.append(cancel, save);
+  }
+
 
   // ---------- edit attendance modal ----------
   function openEditAttendanceModal(ev) {
