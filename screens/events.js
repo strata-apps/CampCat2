@@ -3,6 +3,7 @@
 // Table: public.events(event_id, event_name, contact_ids json, event_date)
 // Requires: window.supabase client
 
+import openEmailDesigner from '../functions/email_design.js';
 import { openRsvpModal } from '../functions/rsvp.js';
 
 
@@ -90,7 +91,7 @@ export default async function EventsScreen(root) {
     }
 
     const { data, error } = await s.from('events')
-      .select('event_id, event_name, contact_ids, event_date, campaign_id, rsvp_ids')
+      .select('event_id, event_name, contact_ids, event_date, campaign_id, rsvp_ids, reminder_template, last_reminder_sent_at, reminder_count')
       .order('event_date', { ascending: false })
       .limit(1000);
 
@@ -118,6 +119,11 @@ export default async function EventsScreen(root) {
   function renderEventCard(ev) {
     const attendance = Array.isArray(ev.contact_ids) ? ev.contact_ids.length : 0;
 
+    const reminderCount = typeof ev.reminder_count === 'number' ? ev.reminder_count : 0;
+    const lastReminderLabel = ev.last_reminder_sent_at
+      ? fmtDate(ev.last_reminder_sent_at)
+      : 'Never';
+
     const card = div({ class: 'card', style: {
       display: 'grid',
       gridTemplateColumns: '1fr auto',
@@ -135,6 +141,10 @@ export default async function EventsScreen(root) {
         div({ style: { display: 'flex', gap: '16px', marginTop: '6px', flexWrap: 'wrap' } },
           div(null, el('div', 'label', 'Event Date'), el('div', null, fmtDate(ev.event_date))),
           div(null, el('div', 'label', 'Total Attendance'), el('div', null, String(attendance))),
+          div(null,
+            el('div', 'label', 'Reminders'),
+            el('div', null, `${reminderCount} sent • Last: ${lastReminderLabel}`)
+          ),
         )
       ),
       div({ style: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' } },
@@ -144,12 +154,220 @@ export default async function EventsScreen(root) {
           : btn('Link Campaign', 'btn', () => openLinkCampaignModal(ev)),
 
         btn('Edit Attendance', 'btn', () => openEditAttendanceModal(ev)),
+        btn('Send Reminder', 'btn', () => handleSendReminder(ev)),
         btn('Export CSV', 'btn', () => exportEventCSV(ev)),
         btn('Delete', 'btn', () => deleteEvent(ev))
       )
     );
     return card;
   }
+
+  // ---------- send reminder (design + send) ----------
+  async function handleSendReminder(ev) {
+    try {
+      const s = sup();
+      if (!s) {
+        alert('Supabase client not available.');
+        return;
+      }
+
+      // Always fetch fresh event row to get latest template + RSVPs
+      const { data: eventRow, error } = await s
+        .from('events')
+        .select('event_id, event_name, event_date, rsvp_ids, reminder_template, last_reminder_sent_at, reminder_count')
+        .eq('event_id', ev.event_id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[events] load event for reminder failed', error);
+        alert('Failed to load event for sending reminders.');
+        return;
+      }
+      if (!eventRow) {
+        alert('Event not found.');
+        return;
+      }
+
+      const rsvpIds = Array.isArray(eventRow.rsvp_ids) ? eventRow.rsvp_ids : [];
+      if (!rsvpIds.length) {
+        const ok = confirm(
+          'This event currently has no RSVPs stored.\n\nYou can still design an email, but “Send Reminder” will have no recipients.\n\nContinue?'
+        );
+        if (!ok) return;
+      }
+
+      const initial = eventRow.reminder_template || {};
+
+      // 1) Open designer with latest template (or starter)
+      openEmailDesigner({
+        initial,
+        onSave: async (tpl) => {
+          try {
+            // Persist latest template to events.reminder_template
+            const { error: upErr } = await s
+              .from('events')
+              .update({ reminder_template: tpl })
+              .eq('event_id', eventRow.event_id);
+
+            if (upErr) throw upErr;
+
+            // 2) After save, open send options modal (test + bulk)
+            openReminderSendModal(eventRow, tpl);
+          } catch (e) {
+            console.error('[events] saving reminder_template failed', e);
+            alert('Template saved in designer, but failed to store it on the event.');
+          }
+        },
+        onClose: () => {
+          // no-op; user can cancel out of designer with no sending
+        }
+      });
+    } catch (e) {
+      console.error('[events] handleSendReminder failed', e);
+      alert('Failed to start reminder flow.\n' + (e?.message || e));
+    }
+  }
+
+  function openReminderSendModal(eventRow, template) {
+    const { close, body, footer, titleEl } = buildModal('Send Reminder Email');
+
+    // Header subtitle
+    titleEl.appendChild(
+      el('div', 'label', `Send reminder for “${eventRow.event_name || 'Event'}”`)
+    );
+
+    const rsvpIds = Array.isArray(eventRow.rsvp_ids) ? eventRow.rsvp_ids : [];
+    const rsvpCount = rsvpIds.length;
+
+    body.innerHTML = '';
+    footer.innerHTML = '';
+
+    // Summary section
+    body.append(
+      div(null,
+        el('div', 'kicker', 'Recipients'),
+        el('div', 'label',
+          rsvpCount
+            ? `${rsvpCount} RSVP${rsvpCount === 1 ? '' : 's'} will receive this reminder.`
+            : 'No RSVPs stored yet. “Send Reminder” will have no recipients.'
+        )
+      ),
+      div({ style: { marginTop: '10px' } },
+        el('div', 'kicker', 'Subject'),
+        el('div', null, template.subject || '(no subject set)')
+      ),
+      div({ style: { marginTop: '6px' } },
+        el('div', 'kicker', 'Preheader'),
+        el('div', null, template.preheader || '(no preheader set)')
+      ),
+      div({ style: { marginTop: '10px' } },
+        el('div', 'label', 'You can send a test to yourself or send the reminder to all RSVPs.')
+      )
+    );
+
+    // Test email input
+    const testLabel = el('div', 'kicker', 'Send Test');
+    testLabel.style.marginTop = '12px';
+
+    const testInput = document.createElement('input');
+    testInput.placeholder = 'your.email@example.com';
+    styleInput(testInput);
+
+    body.append(
+      testLabel,
+      div({ class: 'kv' },
+        el('div', 'k', 'Test recipient'),
+        el('div', 'v', testInput)
+      )
+    );
+
+    const cancel = btn('Cancel', 'btn', () => close());
+
+    const sendTestBtn = btn('Send Test', 'btn', async () => {
+      const email = (testInput.value || '').trim();
+      if (!email) {
+        alert('Enter an email address to send a test.');
+        return;
+      }
+      try {
+        await sendBulkEmail({
+          subject: template.subject || '',
+          html: template.html || '',
+          recipients: [email],
+        });
+        alert('Test email sent (if Gmail API is configured).');
+      } catch (e) {
+        console.error('[events] send test reminder failed', e);
+        alert('Failed to send test email.\n' + (e?.message || e));
+      }
+    });
+
+    const sendAllBtn = btn('Send Reminder', 'btn-primary', async () => {
+      try {
+        if (!rsvpIds.length) {
+          const ok = confirm(
+            'This event currently has no RSVP contact_ids.\n\nAre you sure you want to send a reminder with no recipients?'
+          );
+          if (!ok) return;
+        }
+
+        const s = sup();
+
+        // Resolve RSVP contact emails
+        let recipients = [];
+        if (rsvpIds.length) {
+          const { data: contacts, error } = await s
+            .from('contacts')
+            .select('contact_email')
+            .in('contact_id', rsvpIds);
+
+          if (error) throw error;
+          recipients = (contacts || [])
+            .map(c => (c.contact_email || '').trim())
+            .filter(Boolean);
+        }
+
+        if (!recipients.length) {
+          const ok = confirm(
+            'No valid email addresses found for RSVP contacts.\n\nYou can still send a test, but bulk send will have no recipients.\n\nContinue anyway?'
+          );
+          if (!ok) return;
+        }
+
+        await sendBulkEmail({
+          subject: template.subject || '',
+          html: template.html || '',
+          recipients,
+        });
+
+        // Update reminder metadata on event
+        const nowIso = new Date().toISOString();
+        const nextCount = (eventRow.reminder_count || 0) + 1;
+
+        const { error: upErr } = await s
+          .from('events')
+          .update({
+            last_reminder_sent_at: nowIso,
+            reminder_count: nextCount,
+          })
+          .eq('event_id', eventRow.event_id);
+
+        if (upErr) throw upErr;
+
+        close();
+        await renderList(); // refresh cards to show new indicator
+        alert('Reminder sent (if Gmail API is configured).');
+      } catch (e) {
+        console.error('[events] send bulk reminder failed', e);
+        alert('Failed to send reminder.\n' + (e?.message || e));
+      }
+    });
+
+    footer.append(cancel, sendTestBtn, sendAllBtn);
+  }
+
+
+
 
   // ---------- create event modal ----------
   function openCreateEventModal() {
@@ -551,6 +769,42 @@ export default async function EventsScreen(root) {
 
     return { close, body, footer, titleEl };
   }
+
+    // ---------- Gmail bulk send helper ----------
+  async function sendBulkEmail({ subject, html, recipients }) {
+    // Normalize recipients (dedupe, strip empties)
+    const uniq = Array.from(
+      new Set(
+        (recipients || [])
+          .map(r => (r || '').trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (!uniq.length) {
+      console.warn('[events] sendBulkEmail called with no recipients');
+      return;
+    }
+
+    // TODO: Wire this to your actual Gmail API integration.
+    // For example, if you have a backend endpoint:
+    //
+    // await fetch('/api/gmail/send-bulk', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ subject, html, to: uniq }),
+    // });
+    //
+    // Or if you have a global gmail client on window:
+    //
+    // const gmail = window.gmailClient;
+    // for (const to of uniq) {
+    //   await gmail.send({ to, subject, html });
+    // }
+
+    console.log('[events] sendBulkEmail (stub): would send to', uniq);
+  }
+
 
   function styleInput(inp) {
     Object.assign(inp.style, {
