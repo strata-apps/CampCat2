@@ -329,7 +329,7 @@ export default async function CallExecution(root) {
         survey_questions: parentCampaign?.survey_questions || null,
         survey_options: parentCampaign?.survey_options || null,
         created_at: nowIso,
-        updated_at: nowIso,
+        update_time: nowIso,
         workflow: JSON.stringify(nextWorkflow),   // TEXT column
       };
 
@@ -541,19 +541,46 @@ export default async function CallExecution(root) {
 
       // Upsert into call_progress (for this contact + campaign)
       // Assumes you have a unique key (campaign_id, contact_id)
-      const { error: upErr } = await s
-        .from('call_progress')
-        .upsert({
-          campaign_id,
-          contact_id: c.contact_id,
-          outcome: kind,
-          response: response ?? null,
-          notes: (notes || '').trim() || null,
-          last_called_at: new Date().toISOString(),
-          attempts: 1,
-        }, { onConflict: 'campaign_id,contact_id' });
+      const nowIso = new Date().toISOString();
 
-      if (upErr) throw upErr;
+      const payload = {
+        campaign_id,
+        contact_id: c.contact_id,
+        outcome: kind,
+        response: response ?? null,
+        notes: (notes || '').trim() || null,
+        last_called_at: nowIso,
+        attempts: 1,
+        update_time: nowIso,   // ✅ use your correct column name here
+      };
+
+      // Instead of UPSERT (which does an UPDATE and hits the bad trigger),
+      // delete any existing row and then INSERT fresh.
+      const { data: existing, error: selErr } = await s
+        .from('call_progress')
+        .select('campaign_id, contact_id')
+        .eq('campaign_id', campaign_id)
+        .eq('contact_id', c.contact_id)
+        .maybeSingle();
+
+      if (selErr) throw selErr;
+
+      if (existing) {
+        const { error: delErr } = await s
+          .from('call_progress')
+          .delete()
+          .eq('campaign_id', campaign_id)
+          .eq('contact_id', c.contact_id);
+
+        if (delErr) throw delErr;
+      }
+
+      const { error: insErr } = await s
+        .from('call_progress')
+        .insert(payload);
+
+      if (insErr) throw insErr;
+
 
       // Also add a row in 'interactions' for timeline
       await s.from('interactions').insert({
