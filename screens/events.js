@@ -5,7 +5,6 @@
 
 import openEmailDesigner from '../functions/email_design.js';
 import { openRsvpModal } from '../functions/rsvp.js';
-import { gmailClient } from '../functions/gmail_client.js' 
 
 export default async function EventsScreen(root) {
   const sup = () => window.supabase;
@@ -771,9 +770,13 @@ export default async function EventsScreen(root) {
   }
 
     // ---------- Gmail bulk send helper ----------
-    // ---------- Gmail bulk send helper ----------
-    // ---------- Gmail bulk send helper ----------
+    // ---------- Gmail auth + bulk send (GIS, same pattern as emails.js) ----------
+
+    let accessToken = null;
+    let tokenClient = null;
+
     async function sendBulkEmail({ subject, html, recipients }) {
+      // Normalize + dedupe recipients
       const uniq = Array.from(
         new Set(
           (recipients || [])
@@ -787,27 +790,208 @@ export default async function EventsScreen(root) {
         return;
       }
 
-      if (!gmailClient || typeof gmailClient.sendBulk !== 'function') {
-        console.error('[events] gmailClient not ready', gmailClient);
-        alert('Email sending is not configured. Make sure gmail_client.js is set up.');
+      // Ensure user has authorized Gmail send scope
+      try {
+        await ensureGmailAccess();
+      } catch (e) {
+        console.error('[events] Gmail auth failed or cancelled', e);
+        alert('Gmail authorization was cancelled or failed. Email was not sent.');
         return;
       }
 
-      const results = await gmailClient.sendBulk({
-        to: uniq,
-        subject: subject || '',
-        html: html || '',
-        onProgress: (info) => {
-          console.log(
-            `[events] Sent ${info.index}/${info.total} (${info.to})`
-          );
-        },
-      });
+      const MAX_BCC = 85;     // same safety margin as emails.js
+      const SLEEP_MS = 400;
 
-      console.log('[events] Bulk send complete', results);
+      const plainText = stripHtml(html || '') || (subject || '');
+
+      const chunks = chunk(uniq, MAX_BCC);
+      let sent = 0;
+      let fail = 0;
+
+      for (const group of chunks) {
+        // Try BCC batch first
+        const ok = await sendGmail({
+          to: 'me',
+          bcc: group,
+          subject: subject || '',
+          text: plainText,
+          html: html || ''
+        });
+
+        if (ok) {
+          sent += group.length;
+        } else {
+          // Fallback: one-by-one to count failures accurately
+          for (const addr of group) {
+            const one = await sendGmail({
+              to: addr,
+              subject: subject || '',
+              text: plainText,
+              html: html || ''
+            });
+            one ? sent++ : fail++;
+          }
+        }
+
+        await sleep(SLEEP_MS);
+      }
+
+      console.log(`[events] Bulk send complete → sent=${sent}, failed=${fail}`);
+      if (fail > 0) {
+        alert(`Reminder finished with ${fail} failed sends.`);
+      }
     }
 
+    async function ensureGmailAccess() {
+      // Load GIS script if needed
+      await ensureGIS();
 
+      // Initialize token client if not yet created
+      if (!tokenClient) {
+        const GOOGLE_CLIENT_ID = window.GOOGLE_CLIENT_ID
+          || '765883496085-itufq4k043ip181854tmcih1ka3ascmn.apps.googleusercontent.com';
+
+        tokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: GOOGLE_CLIENT_ID,
+          scope: 'https://www.googleapis.com/auth/gmail.send',
+          callback: () => {
+            // real callback overridden per request below
+          },
+        });
+      }
+
+      if (accessToken) return; // already authorized
+
+      // Wrap the token request in a Promise so we can await it
+      accessToken = await new Promise((resolve, reject) => {
+        tokenClient.callback = (resp) => {
+          if (resp.error) {
+            reject(resp.error);
+            return;
+          }
+          resolve(resp.access_token);
+        };
+
+        // Force consent prompt the first time
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+      });
+    }
+
+    async function sendGmail({ to, bcc, subject, text, html }) {
+      try {
+        const raw = buildRawEmail({ to, bcc, subject, text, html });
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + accessToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ raw }),
+        });
+
+        if (!res.ok) {
+          const errTxt = await res.text();
+          console.error('[events] Gmail send failed:', errTxt);
+          return false;
+        }
+        const data = await res.json();
+        console.log('[events] Sent Gmail id:', data.id, bcc ? '(bcc batch)' : (to ? `→ ${to}` : ''));
+        return true;
+      } catch (e) {
+        console.error('[events] Gmail send error:', e);
+        return false;
+      }
+    }
+
+    function buildRawEmail({ to, bcc, subject, text, html }) {
+      const sub = (subject || '').toString().replace(/\r?\n/g, ' ').trim();
+      const txt = (text || '').toString();
+      const htm = (html || '').toString();
+
+      const boundary = '=_rp_' + Math.random().toString(36).slice(2);
+      const headers = [];
+
+      if (to) headers.push(`To: ${to}`);
+      if (bcc && bcc.length) headers.push(`Bcc: ${bcc.join(', ')}`);
+
+      const asciiOnly = /^[\x00-\x7F]*$/.test(sub);
+      headers.push(
+        `Subject: ${asciiOnly ? sub : encodeRFC2047(sub)}`,
+        'MIME-Version: 1.0',
+        `Content-Type: multipart/alternative; boundary="${boundary}"`
+      );
+
+      const parts = [
+        `--${boundary}`,
+        'Content-Type: text/plain; charset="UTF-8"',
+        'Content-Transfer-Encoding: 7bit',
+        '',
+        (txt || (htm ? stripHtml(htm) : '') || '').replace(/\r?\n/g, '\r\n'),
+
+        `--${boundary}`,
+        'Content-Type: text/html; charset="UTF-8"',
+        'Content-Transfer-Encoding: 7bit',
+        '',
+        (htm || '').replace(/\r?\n/g, '\r\n'),
+
+        `--${boundary}--`,
+        ''
+      ];
+
+      const msg = headers.join('\r\n') + '\r\n\r\n' + parts.join('\r\n');
+      return base64UrlEncode(msg);
+    }
+
+    // --- Small utils (copied from emails.js for consistency) ---
+
+    function chunk(arr, size) {
+      const out = [];
+      for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+      return out;
+    }
+
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+    function stripHtml(h = '') {
+      return h
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<\/(p|div|h[1-6]|li|br|tr)>/gi, '$&\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    }
+
+    function base64UrlEncode(str) {
+      const utf8 = new TextEncoder().encode(str);
+      let binary = '';
+      for (let i = 0; i < utf8.length; i++) binary += String.fromCharCode(utf8[i]);
+      const b64 = btoa(binary);
+      return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    function encodeRFC2047(str) {
+      if (!str) return '';
+      if (/^[\x00-\x7F]*$/.test(str)) return str;
+      const utf8 = new TextEncoder().encode(str);
+      let hex = '';
+      for (let i = 0; i < utf8.length; i++)
+        hex += '=' + utf8[i].toString(16).toUpperCase().padStart(2, '0');
+      return `=?UTF-8?Q?${hex.replace(/ /g, '_')}?=`;
+    }
+
+    async function ensureGIS() {
+      if (window.google?.accounts?.id) return;
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://accounts.google.com/gsi/client';
+        s.async = true;
+        s.defer = true;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('Failed to load Google Identity Services'));
+        document.head.appendChild(s);
+      });
+    }
 
 
 
