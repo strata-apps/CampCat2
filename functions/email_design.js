@@ -324,8 +324,21 @@ export default function openEmailDesigner({ initial = {}, onSave, onClose } = {}
       <td align="center" style="padding:24px;">
         <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="width:640px;max-width:100%;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
           <tr>
-            <td style="padding:18px 22px;background:#111827;color:#ffffff;font-weight:900;font-family:Arial,Helvetica,sans-serif;font-size:20px;">
-              Camp Catanese • Newsletter
+            <td style="
+              padding:18px 22px;
+              background:#111827;
+              text-align:center;
+            ">
+              <img
+                src="camp_cat.png"
+                alt="Camp Catanese"
+                style="
+                  display:block;
+                  margin:0 auto;
+                  width:70px;     /* adjust smaller/larger */
+                  height:auto;
+                "
+              />
             </td>
           </tr>
           <tr>
