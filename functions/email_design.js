@@ -311,6 +311,13 @@ export default function openEmailDesigner({ initial = {}, onSave, onClose } = {}
 
   // --- HTML Builder (email-safe table layout) --------------------------------
   function buildHtml(s) {
+
+    const logoSrc =
+      (typeof window !== 'undefined' && window.CAMP_CAT_LOGO_URL)
+        ? window.CAMP_CAT_LOGO_URL
+        : 'https://strata-apps.github.io/ReachPoint-general/camp_cat.png'; // <-- replace with real URL
+
+
     const preSpan = `
       <span style="display:none!important;opacity:0;color:transparent;max-height:0;max-width:0;overflow:hidden;">
         ${escapeHtml(s.preheader || '')}
@@ -330,7 +337,7 @@ export default function openEmailDesigner({ initial = {}, onSave, onClose } = {}
               text-align:center;
             ">
               <img
-                src="camp_cat.png"
+                src="${escapeHtml(logoSrc)}"
                 alt="Camp Catanese"
                 style="
                   display:block;
