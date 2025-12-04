@@ -5,7 +5,7 @@
 
 import openEmailDesigner from '../functions/email_design.js';
 import { openRsvpModal } from '../functions/rsvp.js';
-
+import gmailClient from '../functions/gmail_client.js'; 
 
 export default async function EventsScreen(root) {
   const sup = () => window.supabase;
@@ -771,39 +771,44 @@ export default async function EventsScreen(root) {
   }
 
     // ---------- Gmail bulk send helper ----------
-  async function sendBulkEmail({ subject, html, recipients }) {
-    // Normalize recipients (dedupe, strip empties)
-    const uniq = Array.from(
-      new Set(
-        (recipients || [])
-          .map(r => (r || '').trim())
-          .filter(Boolean)
-      )
-    );
+    // ---------- Gmail bulk send helper ----------
+    // ---------- Gmail bulk send helper ----------
+    async function sendBulkEmail({ subject, html, recipients }) {
+      const uniq = Array.from(
+        new Set(
+          (recipients || [])
+            .map(r => (r || '').trim())
+            .filter(Boolean)
+        )
+      );
 
-    if (!uniq.length) {
-      console.warn('[events] sendBulkEmail called with no recipients');
-      return;
+      if (!uniq.length) {
+        console.warn('[events] sendBulkEmail called with no recipients');
+        return;
+      }
+
+      if (!gmailClient || typeof gmailClient.sendBulk !== 'function') {
+        console.error('[events] gmailClient not ready', gmailClient);
+        alert('Email sending is not configured. Make sure gmail_client.js is set up.');
+        return;
+      }
+
+      const results = await gmailClient.sendBulk({
+        to: uniq,
+        subject: subject || '',
+        html: html || '',
+        onProgress: (info) => {
+          console.log(
+            `[events] Sent ${info.index}/${info.total} (${info.to})`
+          );
+        },
+      });
+
+      console.log('[events] Bulk send complete', results);
     }
 
-    // TODO: Wire this to your actual Gmail API integration.
-    // For example, if you have a backend endpoint:
-    //
-    // await fetch('/api/gmail/send-bulk', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ subject, html, to: uniq }),
-    // });
-    //
-    // Or if you have a global gmail client on window:
-    //
-    const gmail = window.gmailClient;
-    for (const to of uniq) {
-      await gmail.send({ to, subject, html });
-    }
 
-    console.log('[events] sendBulkEmail (stub): would send to', uniq);
-  }
+
 
 
   function styleInput(inp) {
