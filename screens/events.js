@@ -5,7 +5,7 @@
 
 import openEmailDesigner from '../functions/email_design.js';
 import { openRsvpModal } from '../functions/rsvp.js';
-import gmailClient from '../functions/gmail_client.js'; 
+import { gmailClient } from '../functions/gmail_client.js' 
 
 export default async function EventsScreen(root) {
   const sup = () => window.supabase;
