@@ -9,7 +9,7 @@
 // <script src="./gmail_client.js"></script>
 
 (function () {
-  const CLIENT_ID = 'YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com';
+  const CLIENT_ID = '765883496085-itufq4k043ip181854tmcih1ka3ascmn.apps.googleusercontent.com';
   const API_KEY = 'YOUR_GOOGLE_API_KEY'; // optional but recommended
   const DISCOVERY_DOCS = [
     'https://www.googleapis.com/discovery/v1/apis/gmail/v1/rest',
