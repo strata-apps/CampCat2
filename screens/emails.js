@@ -275,25 +275,39 @@ export default function Emails(root) {
         .eq('campaign_id', id)
         .maybeSingle();
       if (error) throw error;
+
       const current = data || {};
+      const currentHtml = current.email_content || '';
+
       openEmailDesigner({
         initial: {
           subject: current.campaign_subject || '',
           preheader: '',
-          html: current.email_content || ''
+          html: currentHtml,          // start from latest saved HTML
         },
         onSave: async ({ subject, preheader, html }) => {
-          const newSubj = subject || current.campaign_subject || '';
-          await updateCampaign(id, { subject: newSubj, html });
+          // If subject is empty, keep previous
+          const newSubj = subject && subject.trim()
+            ? subject.trim()
+            : (current.campaign_subject || '');
+
+          // If html is missing/undefined, keep the current HTML instead of wiping it
+          const newHtml =
+            typeof html === 'string' && html.trim() !== ''
+              ? html
+              : currentHtml;
+
+          await updateCampaign(id, { subject: newSubj, html: newHtml });
           log('💾 Campaign updated: ' + id);
           await refreshList();
-        }
+        },
       });
     } catch (e) {
       log('Edit error: ' + (e?.message || e));
       alert('Failed to load campaign for editing.');
     }
   }
+
 
   async function doExecute(id) {
     if (!id) return;
