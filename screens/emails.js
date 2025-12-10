@@ -281,9 +281,10 @@ export default function Emails(root) {
 
       openEmailDesigner({
         initial: {
-          subject: current.campaign_subject || '',
+          subject: current.campaign_subject,
           preheader: '',
-          html: currentHtml,          // start from latest saved HTML
+          html: current.email_content,          // start from latest saved HTML
+          blocks: current.email_blocks    // ✅ REHYDRATES EDIT STATE
         },
         onSave: async ({ subject, preheader, html }) => {
           // If subject is empty, keep previous
@@ -297,7 +298,11 @@ export default function Emails(root) {
               ? html
               : currentHtml;
 
-          await updateCampaign(id, { subject: newSubj, html: newHtml });
+        await updateCampaign(id, {
+            subject,
+            html,
+            email_blocks: blocks   // ✅ THIS IS THE KEY
+          });
           log('💾 Campaign updated: ' + id);
           await refreshList();
         },
