@@ -60,6 +60,298 @@ export function renderCampaignInsights(mount, { progressRows = [] } = {}) {
   }
 }
 
+// --- NEW: Calls over time line chart (grouped by day, split by campaign_id) ---
+export function renderCallsOverTimeLine(
+  mount,
+  { progressRows = [], campaignMap = {} } = {}
+  ) {
+  mount.innerHTML = `
+    <div class="card wide" style="margin-top:16px;">
+      <div class="kicker">Insights</div>
+      <div class="big" style="margin-bottom:8px; text-align: center; font-size: 24px;">Recent Call Activity</div>
+      <div class="label" style="margin-bottom:10px">
+      </div>
+      <canvas id="chart-calls-over-time" height="130"></canvas>
+    </div>
+  `;
+
+  try {
+    if (!window.Chart) throw new Error('Chart.js not found on window.Chart');
+
+    // 1) Bucket counts by day + campaign_id
+    const byDay = new Map(); // day -> Map(campaign -> count)
+    const campaigns = new Set();
+
+    for (const r of progressRows) {
+      const day = toDayKey(r.call_time);
+      const camp = String(r.campaign_id ?? '—');
+      campaigns.add(camp);
+
+      if (!byDay.has(day)) byDay.set(day, new Map());
+      const m = byDay.get(day);
+      m.set(camp, (m.get(camp) || 0) + 1);
+    }
+
+    // 2) Sorted day labels
+    const labels = Array.from(byDay.keys()).sort(); // YYYY-MM-DD sorts correctly
+
+    // 3) Build datasets (one line per campaign)
+    const campList = Array.from(campaigns).sort();
+    const palette = [
+      '#2563eb', '#16a34a', '#f97316', '#a855f7',
+      '#ef4444', '#0ea5e9', '#84cc16', '#f59e0b',
+    ];
+
+    const datasets = campList.map((camp, i) => ({
+      label: campaignMap[camp] || `Campaign ${camp}`, // ← name first, fallback to ID
+      data: labels.map((d) => (byDay.get(d)?.get(camp) || 0)),
+      borderColor: palette[i % palette.length],
+      backgroundColor: palette[i % palette.length],
+      tension: 0.25,
+      pointRadius: 2,
+      pointHoverRadius: 4,
+    }));
+
+
+    const ctx = mount.querySelector('#chart-calls-over-time').getContext('2d');
+    makeLine(ctx, { labels, datasets });
+  } catch (e) {
+    console.warn('[charts] Calls-over-time chart failed:', e);
+    // Fall back to a tiny text summary
+    const total = progressRows.length;
+    mount.querySelector('.label').textContent = `Total calls in view: ${total}`;
+  }
+}
+
+// ------------------------------------------------------
+// NEW: timeInteractions — click points to view details
+// Pulls last 365 days of interactions for a contact
+// ------------------------------------------------------
+export async function timeInteractions(mount, { contact_id, campaign_id = null } = {}) {
+  mount.innerHTML = `
+    <div class="card wide" style="margin-top:16px;">
+      <div class="kicker">Insights</div>
+      <div class="big" style="margin-bottom:8px; text-align:center; font-size:24px;">
+        Interactions (Last 365 Days)
+      </div>
+
+      <div class="label" style="margin-bottom:10px; text-align:center;">
+        Click a point to view the call’s response and outcome.
+      </div>
+
+      <canvas id="chart-interactions" height="100"></canvas>
+
+      <div id="interaction-detail" class="card" style="grid-column:span 12; margin-top:12px; display:none;">
+        <div class="label" style="font-weight:800; margin-bottom:6px;">Interaction Details</div>
+        <div id="interaction-detail-body" class="label"></div>
+      </div>
+    </div>
+  `;
+
+  const canvas = mount.querySelector('#chart-interactions');
+  const detail = mount.querySelector('#interaction-detail');
+  const detailBody = mount.querySelector('#interaction-detail-body');
+
+  try {
+    if (!window.Chart) throw new Error('Chart.js not found on window.Chart');
+    if (!window.supabase) throw new Error('Supabase client not found on window.supabase');
+    if (!contact_id) throw new Error('timeInteractions requires contact_id');
+
+    const since = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+    const s = window.supabase;
+
+    // --- single_calls (has response/outcome) ---
+    let scq = s.from('single_calls')
+      .select('call_time, user_id, outcome, response, notes, contact_id')
+      .eq('contact_id', contact_id)
+      .gte('call_time', since)
+      .order('call_time', { ascending: true })
+      .limit(2000);
+
+    const { data: scData, error: scErr } = await scq;
+    if (scErr) throw scErr;
+
+    // --- call_progress (campaign calls; may not include response in your schema) ---
+    let cpq = s.from('call_progress')
+      .select('campaign_id, contact_id, outcome, notes, last_called_at, update_time, call_time')
+      .eq('contact_id', contact_id)
+      .limit(5000);
+
+    if (campaign_id) cpq = cpq.eq('campaign_id', campaign_id);
+
+    // We order by update_time if present; chart sorting will be done after normalization anyway.
+    cpq = cpq.order('update_time', { ascending: false });
+
+    const { data: cpData, error: cpErr } = await cpq;
+    if (cpErr) throw cpErr;
+
+    const toTime = (r) =>
+      r?.call_time || r?.last_called_at || r?.update_time || r?.at || null;
+
+    const fromSingle = (r) => ({
+      at: toTime(r),
+      source: 'single_call',
+      user_id: r.user_id || null,
+      campaign_id: null,
+      outcome: r.outcome || null,
+      response: r.response || null,
+      notes: r.notes || null,
+    });
+
+    const fromCampaign = (r) => ({
+      at: toTime(r),
+      source: 'campaign_call',
+      user_id: null,
+      campaign_id: r.campaign_id || null,
+      outcome: r.outcome || null,
+      response: null, // call_progress in your current file does not include response :contentReference[oaicite:2]{index=2}
+      notes: r.notes || null,
+    });
+
+    // Merge + filter last 365 days
+    const merged = [
+      ...(Array.isArray(scData) ? scData.map(fromSingle) : []),
+      ...(Array.isArray(cpData) ? cpData.map(fromCampaign) : []),
+    ]
+      .filter(x => !!x.at)
+      .filter(x => new Date(x.at) >= new Date(since));
+
+    merged.sort((a, b) => new Date(a.at) - new Date(b.at));
+
+    if (!merged.length) {
+      // nothing to chart
+      mount.querySelector('.label').textContent = 'No interactions in the last 365 days.';
+      return;
+    }
+
+    // Build chart points:
+    // We’ll draw "1" for each interaction (a timeline of dots connected).
+    const labels = merged.map(x => formatLabel(x.at));
+    const values = merged.map(() => 1);
+
+    // Create / replace existing chart safely
+    if (canvas.__chart) {
+      canvas.__chart.destroy();
+      canvas.__chart = null;
+    }
+
+    const ctx = canvas.getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Interaction',
+          data: values,
+          tension: 0.2,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2,
+          fill: false,
+        }]
+      },
+      options: {
+        responsive: true,
+        animation: { duration: 800, easing: 'easeOutQuad' },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            intersect: true,
+            mode: 'nearest',
+            callbacks: {
+              label: (ctx) => {
+                const row = merged[ctx.dataIndex];
+                const out = row?.outcome ? `Outcome: ${row.outcome}` : 'Outcome: —';
+                const resp = row?.response ? `Response: ${row.response}` : 'Response: —';
+                return [out, resp];
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 2,
+            ticks: { display: false },
+            grid: { display: false },
+          },
+          x: { grid: { display: false } }
+        },
+        // Click-to-open details
+        onClick: (_evt, els) => {
+          if (!els?.length) return;
+          const idx = els[0].index;
+          const row = merged[idx];
+          if (!row) return;
+
+          detail.style.display = 'block';
+          detailBody.innerHTML = `
+            <div><b>When:</b> ${row.at ? new Date(row.at).toLocaleString() : '—'}</div>
+            <div><b>Source:</b> ${row.source === 'single_call' ? 'Single Call' : 'Campaign Call'}</div>
+            <div><b>Outcome:</b> ${escapeHtml(row.outcome || '—')}</div>
+            <div><b>Response:</b> ${escapeHtml(row.response || '—')}</div>
+            <div><b>Notes:</b> ${escapeHtml(row.notes || '—')}</div>
+          `;
+          // small scroll into view if needed
+          detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    });
+
+    canvas.__chart = chart;
+  } catch (e) {
+    console.warn('[charts] timeInteractions failed:', e);
+    mount.querySelector('.label').textContent = 'Could not load interaction timeline.';
+  }
+}
+
+function formatLabel(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d)) return '—';
+  // compact: "Jan 5" / "Jan 5, 14:30" depending on density
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+
+function toDayKey(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d)) return '—';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function makeLine(ctx, { labels = [], datasets = [] }) {
+  if (!window.Chart) return;
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      animation: { duration: 900, easing: 'easeOutQuad' },
+      plugins: {
+        legend: { display: true, position: 'bottom' },
+        tooltip: { intersect: false, mode: 'index' },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  });
+}
+
+
 function countBy(arr, fn) {
   const m = {};
   for (const x of arr) {

@@ -2,10 +2,12 @@
 // Route pattern supported: "#/execute/<campaign_id>" or "#/call-execution/<campaign_id>"
 
 import { renderContactInfo } from '../functions/contact_info.js';
-import { renderInteractions } from '../functions/interactions.js';
+// REMOVE renderInteractions import:
+// import { renderInteractions } from '../functions/interactions.js';
+
 import { createDataCollection } from '../functions/data_collection.js';
 import { renderTasks } from '../functions/tasks_function.js';
-import { renderCampaignInsights } from '../functions/charts.js';
+import { renderCampaignInsights, timeInteractions } from '../functions/charts.js';
 import { renderCampaignSummaryTable } from '../functions/summary_table.js';
 import openWorkflowEmailModal from '../functions/workflow_emails.js'; 
 import { renderAttendance } from '../functions/attendance.js';
@@ -422,7 +424,7 @@ export default async function CallExecution(root) {
   }
 
   /* ------------------------------ Live Calling UI ------------------------------ */
-  function renderLive() {
+  async function renderLive() {
     wrap.innerHTML = '';
 
     // Progress header
@@ -472,10 +474,19 @@ export default async function CallExecution(root) {
     infoWrap.append(infoCard);
     wrap.append(infoWrap);
 
-    // Interactions timeline
+    // Interactions timeline (chart)
     const historyCard = div('card');
-    renderInteractions(historyCard, { contact_id: c.contact_id, campaign_id });
+    historyCard.innerHTML = `<div class="label">Loading interaction timeline…</div>`;
     wrap.append(historyCard);
+
+    try {
+      // chart-based interactions (last 365 days, click points for details)
+      await timeInteractions(historyCard, { contact_id: c.contact_id, campaign_id });
+    } catch (e) {
+      console.warn('[call_execution] timeInteractions failed', e);
+      historyCard.innerHTML = `<div class="label" style="color:#b91c1c;">Could not load interaction timeline.</div>`;
+    }
+
 
     // Attendance (same data as Profile → Attendance tab)
     const attendanceCard = div('card');

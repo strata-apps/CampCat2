@@ -22,30 +22,83 @@
 
   <body>
     <!-- Top navigation -->
-    <header class="topbar" id="topbar">
-      <nav class="topnav container">
-        <div class="brand">
-          <span class="brand-name">ReachPoint</span>
-        </div>
-
-        <button id="menu-btn" class="menu-btn" aria-expanded="false" aria-controls="top-tabs" aria-label="Open navigation">
-          <span class="menu-lines"></span>
+    <!-- App Shell: Sidebar + Main -->
+    <div class="app-shell">
+      <!-- Mobile top bar (only shows on small screens) -->
+      <header class="mobilebar" id="mobilebar">
+        <button id="nav-toggle" class="nav-toggle" aria-expanded="false" aria-controls="sidenav" aria-label="Open navigation">
+          <span class="nav-lines"></span>
         </button>
 
-        <ul class="tabs" id="top-tabs">
-          <li><a data-route="#/dashboard" class="tab-link">Dashboard</a></li>
-          <li><a data-route="#/calls" class="tab-link">Calls</a></li>
-          <li><a data-route="#/emails" class="tab-link">Emails</a></li>
-          <li><a data-route="#/tasks" class="tab-link">Tasks</a></li>
-          <li><a data-route="#/events" class="tab-link">Events</a></li>
-          <li><a data-route="#/contacts" class="tab-link">Contacts</a></li>
-          <li><a id="logout-btn" class="tab-link" href="#">Log out</a></li>
-        </ul>
-      </nav>
-    </header>
+        <div class="mobile-brand">
+          <span class="brand-name">ReachPoint</span>
+        </div>
+      </header>
 
-    <!-- App mount -->
-    <main id="app" class="container" role="main"></main>
+      <!-- Sidebar nav -->
+      <aside class="sidenav" id="sidenav" aria-label="Primary navigation" data-auth-only="true">
+        <div class="side-head">
+          <div class="side-brand">
+            <span class="brand-name">ReachPoint</span>
+          </div>
+          <button id="nav-close" class="nav-close" aria-label="Close navigation">✕</button>
+        </div>
+
+        <nav class="side-links">
+          <a data-route="#/dashboard" class="side-link">📊 Dashboard</a>
+          <a data-route="#/calls" class="side-link">📞 Calls</a>
+          <!-- <a data-route="#/emails" class="side-link">✉️ Emails</a> -->
+          <a data-route="#/tasks" class="side-link">✅ Tasks</a>
+          <a data-route="#/events" class="side-link">📅 Events</a>
+          <a data-route="#/contacts" class="side-link">👥 Contacts</a>
+
+          <div class="side-sep"></div>
+
+          <a id="logout-btn" class="side-link danger" href="#">🚪 Log out</a>
+        </nav>
+      </aside>
+
+      <!-- Backdrop for mobile drawer -->
+      <div class="nav-backdrop" id="nav-backdrop" hidden></div>
+
+      <!-- App mount -->
+      <main id="app" class="app-main" role="main"></main>
+    </div>
+
+    <script>
+      // Sidebar toggle (mobile)
+      const btnOpen = document.getElementById('nav-toggle');
+      const btnClose = document.getElementById('nav-close');
+      const sidenav = document.getElementById('sidenav');
+      const backdrop = document.getElementById('nav-backdrop');
+
+      function openNav() {
+        document.documentElement.classList.add('nav-open');
+        btnOpen?.setAttribute('aria-expanded', 'true');
+        backdrop.hidden = false;
+      }
+      function closeNav() {
+        document.documentElement.classList.remove('nav-open');
+        btnOpen?.setAttribute('aria-expanded', 'false');
+        backdrop.hidden = true;
+      }
+
+      btnOpen?.addEventListener('click', openNav);
+      btnClose?.addEventListener('click', closeNav);
+      backdrop?.addEventListener('click', closeNav);
+
+      // Close drawer after navigation click (mobile)
+      sidenav?.addEventListener('click', (e) => {
+        const a = e.target.closest('a[data-route]');
+        if (!a) return;
+        closeNav();
+      });
+
+      // ESC closes drawer
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeNav();
+      });
+    </script>
 
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

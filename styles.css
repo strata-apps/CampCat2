@@ -9,16 +9,14 @@
 #app-root,
 #root {
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;     /* centers it */
-  padding: 0 16px;    /* optional: provides breathing room on the sides */
+  margin: 0;
+  padding: 0;
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 
 body {
-  padding-top: var(--topbar-h);
   margin: 0;
   color: #0f172a;
   font: 15px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
@@ -27,7 +25,6 @@ body {
   background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
   background-size: 16px 16px;
   background-color: #ffffff;
-  scroll-padding-top: var(--topbar-h);
 }
 
 /* ======================================================
@@ -60,11 +57,6 @@ body {
    DASHBOARD MAIN CONTENT AREA
    (Centered container, dotted background, no sidebar)
    ====================================================== */
-.dashboard-container {
-  width: min(1200px, 92vw);
-  margin: 0 auto;
-  position: relative;
-}
 
 /* Canvas behind content */
 .dashboard-canvas {
@@ -403,50 +395,64 @@ body {
 /* ==========================================================
    ADD BUTTON — Green Liquid Glass Pill
    ========================================================== */
+/* ==========================================================
+   ADD BUTTON — Pressable Action Button (Dashboard Style)
+   ========================================================== */
 .btn-add {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
 
-  padding: 10px 20px;
-  border-radius: 999px;
+  padding: 10px 22px;
+  border-radius: 14px;
+
+  /* keep YOUR font */
   font-weight: 800;
   letter-spacing: .3px;
+  font-size: 14px;
+
+  color: #052e10;
+  text-decoration: none !important;
   cursor: pointer;
 
-  background: rgba(34, 197, 94, 0.16); /* soft green tint */
-  border: 1px solid rgba(34, 197, 94, 0.35);
-  color: #052e0f;
+  /* green action color */
+  background-color: #22c55e;
+  border-bottom: 4px solid #16a34a;
 
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
-
+  /* depth */
   box-shadow:
-    0 12px 24px rgba(34, 197, 94, 0.18),
-    0 4px 10px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255,255,255,0.25);
+    0 6px 16px rgba(34, 197, 94, 0.35),
+    inset 0 1px 0 rgba(255,255,255,0.35);
+
+  text-shadow: 0 -1px rgba(0,0,0,0.15);
 
   transition:
-    background .25s ease,
-    box-shadow .25s ease,
-    transform .25s ease;
-
-  text-decoration: none !important;
-
+    transform 0.08s ease,
+    box-shadow 0.08s ease,
+    background-color 0.15s ease;
 }
+
 
 .btn-add:hover {
-  background: rgba(34, 197, 94, 0.32);
-  transform: translateY(-2px);
+  background-color: #2dd46f;
   box-shadow:
-    0 16px 32px rgba(34, 197, 94, 0.28),
-    0 6px 14px rgba(0, 0, 0, 0.18),
-    inset 0 1px 0 rgba(255,255,255,0.32);
+    0 10px 22px rgba(34, 197, 94, 0.45),
+    inset 0 1px 0 rgba(255,255,255,0.45);
+
+  transform: translateY(-1px);
 }
 
+
 .btn-add:active {
-  transform: scale(0.96);
+  transform: translateY(3px);
+  border-bottom: 1px solid #16a34a;
+
+  box-shadow:
+    0 4px 10px rgba(34, 197, 94, 0.25),
+    inset 0 1px 0 rgba(255,255,255,0.25);
 }
+
 
 /* ==========================================================
    DELETE BUTTON — Red Liquid Glass Pill
@@ -505,56 +511,482 @@ body {
    ---------------------------------------------------- */
 
 /* Base styling for all normal buttons */
+/* ==========================================================
+   BASE BUTTON — pressable + pill
+   ========================================================== */
 .btn,
 button.btn {
-  background: #ffffff;
-  border: 1px solid rgba(0,0,0,0.10);
-  border-radius: 999px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
   padding: 8px 14px;
+  border-radius: 999px;
+
   font-weight: 800;
   letter-spacing: .25px;
-  text-decoration: none;
+  font-size: 14px;
+
   color: #0f172a;
-  transition: 0.25s ease;
+  text-decoration: none;
+  cursor: pointer;
+
+  background: #ffffff;
+  border: 1px solid rgba(0,0,0,0.10);
+  border-bottom: 3px solid rgba(0,0,0,0.18);
+
+  box-shadow:
+    0 6px 14px rgba(0,0,0,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.5);
+
+  text-shadow: 0 -1px rgba(0,0,0,0.08);
+
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease,
+    background-color 0.15s ease;
 }
 
 .btn:hover,
 button.btn:hover {
-  transform: translateY(-2px);
   background: #f8fafc;
+  transform: translateY(-1px);
+
+  box-shadow:
+    0 10px 22px rgba(0,0,0,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.6);
 }
 
+.btn:active,
+button.btn:active {
+  transform: translateY(3px);
+  border-bottom-width: 1px;
+
+  box-shadow:
+    0 4px 8px rgba(0,0,0,0.10),
+    inset 0 1px 0 rgba(255,255,255,0.35);
+}
+
+
 /* Primary buttons keep their green/blue backgrounds but inherit shape + font */
+/* ==========================================================
+   PRIMARY BUTTON — keeps color, gains depth
+   ========================================================== */
 .btn-primary,
 button.btn-primary {
   border-radius: 999px;
+  padding: 8px 16px;
+
   font-weight: 800;
   letter-spacing: .25px;
-  padding: 8px 16px;
-  transition: 0.25s ease;
+
+  border-bottom: 4px solid rgba(0,0,0,0.25);
+
+  box-shadow:
+    0 6px 16px rgba(0,0,0,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.35);
+
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease,
+    filter 0.15s ease;
 }
+
 
 .btn-primary:hover,
 button.btn-primary:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   filter: brightness(1.05);
+
+  box-shadow:
+    0 10px 24px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.45);
 }
 
+.btn-primary:active,
+button.btn-primary:active {
+  transform: translateY(3px);
+  border-bottom-width: 1px;
+}
+
+
+
 /* Delete buttons: keep red but match mini-btn shape/weight */
+/* ==========================================================
+   DELETE BUTTON — red, pressable
+   ========================================================== */
 .btn-delete,
 button.btn-delete {
   border-radius: 999px;
+  padding: 8px 14px;
+
   font-weight: 800;
   letter-spacing: .25px;
-  padding: 8px 14px;
+
   background: #fee2e2;
   color: #991b1b;
+
   border: 1px solid #fecaca;
-  transition: 0.25s ease;
+  border-bottom: 3px solid #fca5a5;
+
+  box-shadow:
+    0 6px 14px rgba(248,113,113,0.35),
+    inset 0 1px 0 rgba(255,255,255,0.4);
+
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease,
+    background-color 0.15s ease;
 }
+
 
 .btn-delete:hover,
 button.btn-delete:hover {
-  transform: translateY(-2px);
   background: #fecaca;
+  transform: translateY(-1px);
 }
+
+.btn-delete:active,
+button.btn-delete:active {
+  transform: translateY(3px);
+  border-bottom-width: 1px;
+}
+
+
+/* ======================================================
+   SIDENAV LAYOUT (replaces topbar layout)
+   ====================================================== */
+
+:root{
+  --side-w: 200px;
+  --mobilebar-h: 56px;
+  --side-bg: rgba(255,255,255,0.86);
+  --side-stroke: rgba(0,0,0,0.08);
+  --side-shadow: 0 18px 40px rgba(0,0,0,0.12);
+}
+
+/* App shell: sidebar + main */
+.app-shell{
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: var(--side-w) 1fr;
+}
+
+/* MAIN content area:
+   - desktop: padded left to make room for fixed sidenav
+*/
+.app-main{
+  width: 100%;
+  padding: 24px 24px 32px;
+}
+
+.app-main > *{
+  width: min(1200px, 92vw);
+  margin: 0 auto;
+}
+
+
+/* Sidebar fixed on desktop */
+.sidenav{
+  position: sticky;     /* stays visible while scrolling */
+  top: 0;
+  height: 100vh;        /* full viewport height */
+  width: var(--side-w);
+  z-index: 1;           /* no need to sit above content */
+
+  background: var(--side-bg);
+  border-right: 1px solid var(--side-stroke);
+
+  backdrop-filter: blur(18px) saturate(175%);
+  -webkit-backdrop-filter: blur(18px) saturate(175%);
+  box-shadow: var(--side-shadow);
+  overflow-y: auto;
+}
+
+
+.side-head{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--side-stroke);
+}
+
+.side-brand .brand-name{
+  font-weight: 900;
+  letter-spacing: .2px;
+}
+
+.nav-close{
+  display:none; /* only on mobile */
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid var(--side-stroke);
+  background: rgba(255,255,255,0.7);
+  cursor:pointer;
+}
+
+.side-links{
+  display:flex;
+  flex-direction:column;
+  padding: 12px;
+  gap: 8px;
+}
+
+.side-link{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+
+  padding: 10px 12px;
+  border-radius: 14px;
+
+  text-decoration:none;
+  color: #0f172a;
+  font-weight: 800;
+  letter-spacing: .1px;
+
+  border: 1px solid rgba(0,0,0,0.06);
+  background: rgba(255,255,255,0.75);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+
+  transition: transform .12s ease, background .12s ease;
+}
+
+.side-link:hover{
+  transform: translateY(-1px);
+  background: rgba(248,250,252,0.92);
+}
+
+.side-link.active{
+  color: #ffffff;
+  background: color-mix(in srgb, var(--accent) 35%, #3b82f6);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.side-link.danger{
+  background: rgba(239,68,68,0.10);
+  border-color: rgba(239,68,68,0.25);
+  color: #7f1111;
+}
+
+.side-sep{
+  height: 1px;
+  background: rgba(0,0,0,0.08);
+  margin: 6px 2px;
+}
+
+/* Mobile top bar (hamburger) */
+.mobilebar{
+  display:none;
+  position: sticky;
+  top: 0;
+  z-index: 1100;
+  height: var(--mobilebar-h);
+
+  padding: 0 14px;
+  align-items:center;
+  gap: 10px;
+
+  background: rgba(255,255,255,0.75);
+  border-bottom: 1px solid var(--side-stroke);
+  backdrop-filter: blur(18px) saturate(175%);
+  -webkit-backdrop-filter: blur(18px) saturate(175%);
+}
+
+.nav-toggle{
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  border: 1px solid var(--side-stroke);
+  background: rgba(255,255,255,0.85);
+  cursor:pointer;
+  position:relative;
+}
+
+.nav-lines,
+.nav-lines::before,
+.nav-lines::after{
+  position:absolute;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: #111;
+  content:"";
+}
+.nav-lines{ top: 20px; }
+.nav-lines::before{ top: -7px; }
+.nav-lines::after{ top: 7px; }
+
+.mobile-brand .brand-name{
+  font-weight: 900;
+}
+
+/* Backdrop (mobile drawer) */
+.nav-backdrop{
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,0.35);
+  z-index: 1150;
+}
+
+/* ======================================================
+   RESPONSIVE: hide sidebar on small screens (drawer)
+   ====================================================== */
+@media (max-width: 900px){
+  .app-shell{
+    grid-template-columns: 1fr;  /* stack */
+    grid-template-rows: var(--mobilebar-h) auto auto;
+    column-gap: 20px;
+    .side-head { display: none; }
+  }
+
+  .mobilebar{ display:flex; }
+
+  /* sidebar becomes a normal block section (not overlay) */
+  .sidenav{
+    position: relative;
+    top: auto;
+    height: auto;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--side-stroke);
+    box-shadow: none;
+  }
+
+  .nav-close{ display:none; }
+  .nav-backdrop{ display:none !important; }
+
+  .app-main{
+    padding: 14px 16px 24px;
+  }
+
+  /* optional: hide sidebar links by default on mobile */
+  .side-links{
+    display: none;
+  }
+
+  /* show when html.nav-open is set */
+  html.nav-open .side-links{
+    display: flex;
+  }
+}
+/* When shell is hidden (signin), make app single-column */
+body.no-shell .app-shell{
+  grid-template-columns: 1fr !important;
+  column-gap: 0 !important;
+}
+
+/* Ensure the main content spans full width */
+body.no-shell .app-main{
+  padding-top: 20px;
+}
+/* ======================================================
+   RP DASH CARDS — reusable (from dashboard)
+   ====================================================== */
+
+.rp-dash-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:16px;
+  max-width: 780px;
+}
+@media (max-width: 620px){
+  .rp-dash-grid{ grid-template-columns: 1fr; }
+}
+
+.rp-card{
+  position:relative;
+  border-radius:22px;
+  padding:18px;
+  min-height:140px;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  text-decoration:none;
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+  transition: transform .12s ease, box-shadow .12s ease;
+  overflow:hidden;
+}
+.rp-card:hover{
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(0,0,0,0.12);
+}
+
+.rp-card-title{
+  font-weight: 900;
+  font-size: 18px;
+  color:#0f172a;
+  letter-spacing: .2px;
+}
+.rp-card-sub{
+  margin-top:6px;
+  font-size: 13px;
+  color: rgba(15,23,42,0.72);
+  max-width: 22ch;
+  line-height: 1.25rem;
+}
+
+.rp-card-icon{
+  width:72px;
+  height:72px;
+  border-radius:18px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 40px;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+  border: 1px solid rgba(255,255,255,0.55);
+}
+
+.rp-badge{
+  position:absolute;
+  right:12px;
+  bottom:12px;
+  width:30px;
+  height:30px;
+  border-radius:999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-weight: 900;
+  font-size: 12px;
+  color:#0f172a;
+  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
+/* Card colors */
+.rp-yellow { background: #fde047; }
+.rp-mint   { background: #86efac; }
+.rp-coral  { background: #fb7185; }
+.rp-lav    { background: #a5b4fc; }
+
+.rp-yellow .rp-card-icon,
+.rp-mint   .rp-card-icon,
+.rp-coral  .rp-card-icon,
+.rp-lav    .rp-card-icon { background: rgba(255,255,255,0.38); }
+
+/* Desktop: give screens breathing room */
+.screen-tasks { margin-top: 16px; }
+
+/* Mobile: remove extra shift (mobilebar already creates vertical space) */
+@media (max-width: 900px){
+  .screen-tasks { margin-top: 0 !important; }
+  .screen-tasks .page-head { margin-top: 0 !important; }
+}
+
+@media (max-width: 900px){
+  .app-main { padding-top: 10px; }   /* tighten */
+}
+
+page-head {
+  margin-left: 20px;
+}
+
+
+

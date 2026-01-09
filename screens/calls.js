@@ -1,25 +1,33 @@
 // screens/calls.js
 export default function Calls(root) {
   root.innerHTML = `
-    <section class="page-head">
-      <h1 class="page-title">Call Campaigns</h1>
+    <section class="page-head" style="margin-top:40px; margin-left: 20px;">
+      
       <div style="display:flex; justify-content:right; margin-top:10px;">
-        <a class="btn-add" href="#/create-calls" style="color:black; text-decoration:none;">New Campaign</a>
+        <a class="btn-add" href="#/create-calls" style="color:black; text-decoration:none; margin-bottom:10px;">New Campaign</a>
       </div>
     </section>
 
-    <section id="calls-stats" class="cards" style="margin-bottom:14px">
-      <div class="card" id="stat-total-calls">
-        <div class="kicker">Engagement</div>
-        <div class="big">—</div>
-        <div class="label">Total calls made</div>
+    <section id="calls-stats" class="rp-dash-grid" style="margin-bottom:14px">
+      <div class="rp-card rp-yellow" id="stat-total-calls">
+        <div>
+          <div class="rp-card-title">Engagement</div>
+          <div class="big">—</div>
+          <div class="rp-card-sub">Total calls made</div>
+        </div>
+        <div class="rp-card-icon" aria-hidden="true">📈</div>
       </div>
-      <div class="card" id="stat-active-campaigns">
-        <div class="kicker">Calls</div>
-        <div class="big">—</div>
-        <div class="label">Active campaigns</div>
+
+      <div class="rp-card rp-mint" id="stat-active-campaigns">
+        <div>
+          <div class="rp-card-title">Calls</div>
+          <div class="big">—</div>
+          <div class="rp-card-sub">Active campaigns</div>
+        </div>
+        <div class="rp-card-icon" aria-hidden="true">📞</div>
       </div>
     </section>
+
 
     <section id="calls-list" class="cards"></section>
   `;
@@ -111,8 +119,8 @@ export default function Calls(root) {
           <div class="big" style="margin-bottom:6px">${escapeHtml(c.campaign_name || 'Untitled Campaign')}</div>
           <div class="latest-row" style="gap:8px; flex-wrap:wrap">
             <span class="badge">ID: ${idShort}…</span>
-            <span class="badge">Questions: ${qCount}</span>
-            <span class="badge">Options: ${oCount}</span>
+            <!-- <span class="badge">Questions: ${qCount}</span>
+            <span class="badge">Options: ${oCount}</span> -->
             <span class="badge">Recipients: ${recipients}</span>
             ${c.workflow ? `<span class="badge">Workflow ✓</span>` : `<span class="badge">No workflow</span>`}
           </div>

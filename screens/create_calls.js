@@ -22,14 +22,13 @@ export default function CreateCalls(root) {
       }
     </style>
 
-    <section class="page-head">
+    <section class="page-head" style="margin-top:40px; margin-left: 20px;">
       <h1 class="page-title">Create Call Campaign</h1>
     </section>
 
     <!-- Campaign name -->
     <div class="cards" style="margin-bottom:14px">
       <div class="card" style="grid-column:span 12;">
-        <div class="kicker">Campaign</div>
         <label class="label" style="display:block;margin-top:8px;">Campaign name</label>
         <input id="cc-name" type="text" placeholder="e.g., STEM Night RSVPs"
                style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(0,0,0,.12);">

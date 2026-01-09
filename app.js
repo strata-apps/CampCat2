@@ -40,9 +40,12 @@ const routes = {
   },
 
   '#/calls': async (root) => {
-    const module = await import(`${BASE}/screens/calls.js`);
+    const url = `${BASE}/screens/calls.js?v=${Date.now()}`;
+    const module = await import(url);
     return module.default(root);
   },
+
+
 
   '#/create-calls': async (root) => {
     const module = await import(`${BASE}/screens/create_calls.js`);
@@ -109,11 +112,27 @@ const routes = {
 
 const DEFAULT_ROUTE = '#/dashboard';
 const appRoot = document.getElementById('app');
-const topbar = document.getElementById('topbar');
-const menuBtn = document.getElementById('menu-btn');
+if (!appRoot) throw new Error('App mount #app not found');
+
+const sidenav = document.getElementById('sidenav');
+const mobilebar = document.getElementById('mobilebar');
+const backdrop = document.getElementById('nav-backdrop');
+
+function setShellVisible(isVisible) {
+  // show/hide nav shell
+  if (sidenav) sidenav.style.display = isVisible ? '' : 'none';
+  if (mobilebar) mobilebar.style.display = isVisible ? '' : 'none';
+  if (backdrop) backdrop.hidden = true;
+
+  // close any open drawer state
+  document.documentElement.classList.remove('nav-open');
+
+  // optional: on signin, remove any left spacing/gap from the layout (if using grid gap)
+  document.body.classList.toggle('no-shell', !isVisible);
+}
 
 function setActiveTab(hash) {
-  const links = document.querySelectorAll('.tab-link');
+  const links = document.querySelectorAll('.tab-link, .side-link');
   const hp = String(hash || '');
   const m = hp.match(/^#\/([A-Za-z0-9\-]+)/);   // get 1st segment only
   const normalized = m ? `#/${m[1]}` : hp;
@@ -130,6 +149,9 @@ async function renderRoute() {
   const hashPath = rawHash.split('?')[0];
   const m = hashPath.match(/^#\/([A-Za-z0-9\-]+)/);     // "#/call-execution/123" -> "call-execution"
   const base = m ? `#/${m[1]}` : hashPath;
+  // Hide sidebar/mobilebar on sign-in
+  setShellVisible(base !== '#/signin');
+
 
   if (!routes[base]) {
     location.hash = DEFAULT_ROUTE;
@@ -167,13 +189,29 @@ async function renderRoute() {
     console.error(err);
     appRoot.innerHTML = `<div class="centered">There was an error loading this screen.</div>`;
   }
-
-  // Close mobile menu after navigating
-  if (topbar?.classList.contains('open')) {
-    topbar.classList.remove('open');
-    menuBtn?.setAttribute('aria-expanded', 'false');
-  }
 }
+
+function attachRouteLinkHandler() {
+  // Intercept clicks on ANY element with data-route, anywhere in the app shell
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-route]');
+    if (!a) return;
+
+    e.preventDefault();
+    const route = a.getAttribute('data-route');
+    if (!route) return;
+
+    const currentBase = (location.hash || '').split('?')[0];
+
+    if (route === currentBase) {
+      // Same route: force reload
+      renderRoute();
+    } else {
+      location.hash = route;
+    }
+  });
+}
+
 
 function showPlaceholder(root, title) {
   root.innerHTML = `
@@ -190,24 +228,6 @@ function showPlaceholder(root, title) {
     </div>`;
 }
 
-// Top bar links update hash (force re-render if the same tab is clicked)
-document.getElementById('top-tabs')?.addEventListener('click', (e) => {
-  const a = e.target.closest('.tab-link');
-  if (!a) return;
-  e.preventDefault();
-
-  const route = a.getAttribute('data-route');
-  if (!route) return;
-
-  const currentBase = (location.hash || '').split('?')[0];
-  if (route === currentBase) {
-    // Same route: force a re-render so the screen reloads cleanly
-    renderRoute();
-  } else {
-    location.hash = route;
-  }
-});
-
 // If we come back to a blank app (rare race), refresh the current route
 window.addEventListener('visibilitychange', () => {
   if (!document.hidden && appRoot && !appRoot.hasChildNodes()) {
@@ -215,15 +235,10 @@ window.addEventListener('visibilitychange', () => {
   }
 });
 
-// Mobile menu toggle
-menuBtn?.addEventListener('click', () => {
-  const open = topbar.classList.toggle('open');
-  menuBtn.setAttribute('aria-expanded', String(open));
-});
-
 // Route on initial load + on hash change
 window.addEventListener('hashchange', renderRoute);
 
+attachRouteLinkHandler();
 // 1) If the document is already loaded, render immediately.
 //    Otherwise, wait for DOMContentLoaded.
 if (document.readyState === 'loading') {

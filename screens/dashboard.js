@@ -1,176 +1,182 @@
 // screens/dashboard.js
-// Live-wired Dashboard: Call Campaigns, Email Campaigns, Tasks, Upcoming Events
-// Requires window.supabase (auth + from)
+// New Dashboard: 4-card navigation grid (Call Campaigns, Events, Tasks, Contacts)
 
-export default function Dashboard(root) {
+export default async function Dashboard(root) {
   root.innerHTML = `
-    <!-- Page Header -->
-    <section class="page-head">
-      <h1 class="page-title">Dashboard</h1>
-      <div class="subtle">Welcome back — here’s your overview.</div>
+    <section class="page-head" style="margin-top:45px; margin-left: 20px;">
     </section>
 
-    <div class="dashboard-container">
-      <div class="dashboard-canvas"></div>
-
-      <div class="dashboard-stage">
-
-        <!-- Mini Navigation -->
-        <nav class="mini-nav" id="miniNav">
-          ${mini("Call Campaigns")}
-          ${mini("Email Campaigns")}
-          ${mini("Tasks")}
-          ${mini("Upcoming Events")}
-        </nav>
-
-        <section id="dashMount"></section>
-      </div>
-    </div>
-  `;
-
-  // Define before any renderer runs (function declarations are hoisted)
-  function sup() { return window.supabase; }
-
-
-  // Default tab
-  setActive("Call Campaigns");
-  renderCallCampaigns();
-
-  // Mini-nav clicks
-  root.querySelector("#miniNav").addEventListener("click", (e) => {
-    const btn = e.target.closest(".mini-btn");
-    if (!btn) return;
-    const label = btn.dataset.label;
-    setActive(label);
-
-    if (label === "Call Campaigns") renderCallCampaigns();
-    if (label === "Email Campaigns") renderEmailCampaigns();
-    if (label === "Tasks") renderTasks();
-    if (label === "Upcoming Events") renderUpcomingEvents();
-  });
-
-  /* ---------------- Helpers ---------------- */
-  function mini(label) {
-    return `<a href="#" class="mini-btn" data-label="${label}">${label}</a>`;
-  }
-  function setActive(label) {
-    root.querySelectorAll(".mini-btn").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.label === label);
-    });
-  }
-  function mount() {
-    return root.querySelector("#dashMount");
-  }
-  const fmtShort = (iso) => {
-    const d = new Date(iso);
-    return Number.isNaN(d) ? "—" : d.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
-  };
-  const fmtRel = (iso) => {
-    const d = new Date(iso); if (Number.isNaN(d)) return "—";
-    const mins = Math.round((Date.now() - d) / 60000);
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.round(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    const days = Math.round(hrs / 24);
-    return `${days}d ago`;
-  };
-  const escapeHtml = (s='') => s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  //const sup = () => globalThis.supabase;
-
-  // Reuse Calls screen’s "active" definition (dates.end >= now or missing). :contentReference[oaicite:4]{index=4}
-  function isActive(c, now = new Date()) {
-    const end = c?.dates?.end ? new Date(c.dates.end) : null;
-    return !end || end.getTime() >= now.getTime();
-  }
-
-  /* ---------------- Sections ---------------- */
-
-  // CALL CAMPAIGNS: active campaigns + total calls made (call_progress)
-  async function renderCallCampaigns() {
-    const m = mount();
-    m.innerHTML = loader();
-
-    let activeCount = 0;
-    let callsTotal = 0;
-
-    if (sup()?.from) {
-      // campaigns
-      const { data: camps, error: errC } = await sup()
-        .from('call_campaigns')
-        .select('*')
-        .order('updated_at', { ascending: false });
-      if (!errC && Array.isArray(camps)) {
-        const now = new Date();
-        activeCount = camps.filter(c => isActive(c, now)).length; // same logic as Calls screen :contentReference[oaicite:5]{index=5}
+    <style>
+      /* Scoped styles for this screen only */
+      .rp-dash-grid{
+        display:grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap:16px;
+        max-width: 780px;
+      }
+      @media (max-width: 620px){
+        .rp-dash-grid{ grid-template-columns: 1fr; }
       }
 
-      // total calls
-      const { count, error: errP } = await sup()
-        .from('call_progress')
-        .select('*', { count: 'exact', head: true });
-      if (!errP && Number.isFinite(count)) callsTotal = count;
-    }
+      .rp-card{
+        position:relative;
+        border-radius:22px;
+        padding:18px;
+        min-height:140px;
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        text-decoration:none;
+        border: 1px solid rgba(0,0,0,0.06);
+        box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+        transition: transform .12s ease, box-shadow .12s ease;
+        overflow:hidden;
+      }
+      .rp-card:hover{
+        transform: translateY(-2px);
+        box-shadow: 0 14px 30px rgba(0,0,0,0.12);
+      }
 
-    m.innerHTML = `
-      <div class="cards">
-        <div class="card">
-          <div class="kicker">Campaigns</div>
-          <div class="big">${Number.isFinite(activeCount) ? activeCount : '—'}</div>
-          <div class="label">Active call campaigns</div>
+      .rp-card-title{
+        font-weight: 900;
+        font-size: 18px;
+        color:#0f172a;
+        letter-spacing: .2px;
+      }
+      .rp-card-sub{
+        margin-top:6px;
+        font-size: 13px;
+        color: rgba(15,23,42,0.72);
+        max-width: 22ch;
+        line-height: 1.25rem;
+      }
+
+      .rp-card-icon{
+        width:72px;
+        height:72px;
+        border-radius:18px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-size: 40px;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.12);
+        border: 1px solid rgba(255,255,255,0.55);
+      }
+
+      .rp-badge{
+        position:absolute;
+        right:12px;
+        bottom:12px;
+        width:30px;
+        height:30px;
+        border-radius:999px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-weight: 900;
+        font-size: 12px;
+        color:#0f172a;
+        background: rgba(255,255,255,0.85);
+        border: 1px solid rgba(0,0,0,0.08);
+      }
+
+      /* Card colors (match your screenshot vibe) */
+      .rp-yellow { background: #fde047; }
+      .rp-mint   { background: #86efac; }
+      .rp-coral  { background: #fb7185; }
+      .rp-lav    { background: #a5b4fc; }
+
+      .rp-yellow .rp-card-icon { background: rgba(255,255,255,0.38); }
+      .rp-mint   .rp-card-icon { background: rgba(255,255,255,0.38); }
+      .rp-coral  .rp-card-icon { background: rgba(255,255,255,0.38); }
+      .rp-lav    .rp-card-icon { background: rgba(255,255,255,0.38); }
+    </style>
+
+    <div class="rp-dash-grid">
+      <a class="rp-card rp-yellow" href="#/calls" aria-label="Go to Call Campaigns">
+        <div>
+          <div class="rp-card-title">Call Campaigns</div>
+          <div class="rp-card-sub">Launch, manage, and execute call lists.</div>
         </div>
+        <div class="rp-card-icon" aria-hidden="true">📞</div>
+        <div class="rp-badge" id="badgeCalls">—</div>
+      </a>
 
-        <div class="card">
-          <div class="kicker">Calls Completed</div>
-          <div class="big">${Number.isFinite(callsTotal) ? callsTotal.toLocaleString() : '—'}</div>
-          <div class="label">All time (call_progress)</div>
+      <a class="rp-card rp-mint" href="#/events" aria-label="Go to Events">
+        <div>
+          <div class="rp-card-title">Events</div>
+          <div class="rp-card-sub">Track upcoming events and attendance.</div>
         </div>
+        <div class="rp-card-icon" aria-hidden="true">📅</div>
+        <div class="rp-badge" id="badgeEvents">—</div>
+      </a>
 
-        <div class="card wide">
-          <div class="latest-row" style="gap:8px;flex-wrap:wrap">
-            <a class="btn" href="#/calls">Open Call Campaigns</a>
-            <a class="btn" href="#/create-calls">Create Call Campaign</a>
-          </div>
+      <a class="rp-card rp-coral" href="#/tasks" aria-label="Go to Tasks">
+        <div>
+          <div class="rp-card-title">Tasks</div>
+          <div class="rp-card-sub">Your assigned to-dos and follow-ups.</div>
         </div>
-      </div>
-    `;
-  }
+        <div class="rp-card-icon" aria-hidden="true">✅</div>
+        <div class="rp-badge" id="badgeTasks">—</div>
+      </a>
 
-  // EMAIL CAMPAIGNS: total campaign count (email_campaigns) :contentReference[oaicite:6]{index=6}
-  async function renderEmailCampaigns() {
-    const m = mount();
-    m.innerHTML = loader();
+      <a class="rp-card rp-lav" href="#/contacts" aria-label="Go to Contacts">
+        <div>
+          <div class="rp-card-title">Contacts</div>
+          <div class="rp-card-sub">Search, edit, and organize your people.</div>
+        </div>
+        <div class="rp-card-icon" aria-hidden="true">👥</div>
+        <div class="rp-badge" id="badgeContacts">—</div>
+      </a>
+    </div>
 
-    let totalEmailCampaigns = 0;
+    <div id="dashChartsMount"></div>
+  `;
+
+  // Optional: populate the little number badges (safe fallbacks if tables differ)
+  const sup = () => window.supabase;
+
+  const setBadge = (id, val) => {
+    const el = root.querySelector(id);
+    if (el) el.textContent = (val === null || val === undefined) ? '—' : String(val);
+  };
+
+  try {
+    // Calls badge: active call campaigns (falls back to total campaigns if no dates)
+    let activeCalls = null;
     if (sup()?.from) {
-      const { count, error } = await sup()
-        .from('email_campaigns')
-        .select('*', { count: 'exact', head: true });
-      if (!error && Number.isFinite(count)) totalEmailCampaigns = count;
+      const { data: camps, error } = await sup()
+        .from('call_campaigns')
+        .select('*')
+        .limit(2000);
+      if (!error && Array.isArray(camps)) {
+        const now = new Date();
+        const isActive = (c) => {
+          const end = c?.dates?.end ? new Date(c.dates.end) : null;
+          return !end || end.getTime() >= now.getTime();
+        };
+        activeCalls = camps.some(c => c?.dates) ? camps.filter(isActive).length : camps.length;
+      }
     }
+    setBadge('#badgeCalls', activeCalls);
 
-    m.innerHTML = `
-      <div class="cards">
-        <div class="card">
-          <div class="kicker">Campaigns</div>
-          <div class="big">${Number.isFinite(totalEmailCampaigns) ? totalEmailCampaigns : '—'}</div>
-          <div class="label">Total email campaigns</div>
-        </div>
+    // Events badge: events in next 30 days
+    let upcomingEvents = null;
+    if (sup()?.from) {
+      const now = new Date();
+      const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+      const { data, error } = await sup()
+        .from('events')
+        .select('event_id, event_date')
+        .gte('event_date', now.toISOString())
+        .lt('event_date', in30.toISOString())
+        .limit(5000);
+      if (!error && Array.isArray(data)) upcomingEvents = data.length;
+    }
+    setBadge('#badgeEvents', upcomingEvents);
 
-        <div class="card wide">
-          <div class="latest-row" style="gap:8px;flex-wrap:wrap">
-            <a class="btn" href="#/emails">Open Email Campaigns</a>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  // TASKS: active tasks for current user (delete-on-complete model) :contentReference[oaicite:7]{index=7}
-  async function renderTasks() {
-    const m = mount();
-    m.innerHTML = loader();
-
-    let activeCount = 0;
+    // Tasks badge: tasks for current user
+    let myTasks = null;
     if (sup()?.auth?.getUser && sup()?.from) {
       const { data: { user } } = await sup().auth.getUser();
       if (user) {
@@ -178,98 +184,73 @@ export default function Dashboard(root) {
           .from('tasks')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user.id);
-        if (!error && Number.isFinite(count)) activeCount = count;
+        if (!error && Number.isFinite(count)) myTasks = count;
+      }
+    }
+    setBadge('#badgeTasks', myTasks);
+
+    // Contacts badge: total contacts (common table name: "contacts")
+    let contactsTotal = null;
+    if (sup()?.from) {
+      const { count, error } = await sup()
+        .from('contacts')
+        .select('*', { count: 'exact', head: true });
+      if (!error && Number.isFinite(count)) contactsTotal = count;
+    }
+    setBadge('#badgeContacts', contactsTotal);
+  } catch {
+    // If anything fails, keep badges as "—"
+  }
+
+    // -------- Charts: Calls over time (call_progress grouped by call_time, split by campaign_id) --------
+  try {
+    const chartsMount = root.querySelector('#dashChartsMount');
+    if (!chartsMount) return;
+
+    // Compute BASE like app.js does (so imports work from any GitHub Pages subpath)
+    const BASE = location.pathname.replace(/\/index\.html$/, '').replace(/\/$/, '');
+
+    // Load chart renderer
+    const charts = await import(`${BASE}/functions/charts.js`);
+
+    // Fetch rows from call_progress
+    // NOTE: Adjust columns if your schema differs; these are the ones needed for this chart.
+    let progressRows = [];
+    if (window.supabase?.from) {
+      // Keep it reasonably sized; expand if you want "all time"
+      const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data, error } = await window.supabase
+        .from('call_progress')
+        .select('campaign_id, call_time')
+        .gte('call_time', since)
+        .order('call_time', { ascending: true })
+        .limit(10000);
+
+      if (!error && Array.isArray(data)) progressRows = data;
+    }
+
+    // Build campaign_id → campaign_name map
+    let campaignMap = {};
+
+    if (window.supabase?.from) {
+      const { data: campaigns } = await window.supabase
+        .from('call_campaigns')
+        .select('campaign_id, campaign_name');
+
+      if (Array.isArray(campaigns)) {
+        for (const c of campaigns) {
+          if (c.campaign_id && c.campaign_name) {
+            campaignMap[String(c.campaign_id)] = c.campaign_name;
+          }
+        }
       }
     }
 
-    m.innerHTML = `
-      <div class="cards">
-        <div class="card">
-          <div class="kicker">Open</div>
-          <div class="big">${Number.isFinite(activeCount) ? activeCount : '—'}</div>
-          <div class="label">Active tasks assigned to you</div>
-        </div>
-
-        <div class="card wide">
-          <div class="latest-row" style="gap:8px;flex-wrap:wrap">
-            <a class="btn" href="#/tasks">Open Tasks</a>
-          </div>
-        </div>
-      </div>
-    `;
+    // Render chart
+    charts.renderCallsOverTimeLine(chartsMount, { progressRows, campaignMap });
+  } catch (e) {
+    console.warn('[dashboard] charts render failed:', e);
   }
 
-  // UPCOMING EVENTS: events within 30 days from today (replace Insights) :contentReference[oaicite:8]{index=8}
-  async function renderUpcomingEvents() {
-    const m = mount();
-    m.innerHTML = loader();
-
-    let events = [];
-    if (sup()?.from) {
-      const now = new Date();
-      const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-      const { data, error } = await sup()
-        .from('events')
-        .select('event_id, event_name, event_date, contact_ids, updated_at, created_at')
-        .gte('event_date', now.toISOString())
-        .lt('event_date', in30.toISOString())
-        .order('event_date', { ascending: true })
-        .limit(1000);
-      if (!error && Array.isArray(data)) events = data;
-    }
-
-    const list = events.map(ev => {
-      const count = Array.isArray(ev.contact_ids) ? ev.contact_ids.length : 0;
-      return `
-        <div class="card wide">
-          <div style="flex:1;min-width:0">
-            <div class="kicker">Event</div>
-            <div class="big" style="margin-bottom:6px">${escapeHtml(ev.event_name || 'Untitled')}</div>
-            <div class="latest-row" style="gap:8px;flex-wrap:wrap">
-              <span class="badge">Date: ${fmtShort(ev.event_date)}</span>
-              <span class="badge">Attendance: ${count}</span>
-              <span class="badge">Updated ${fmtRel(ev.updated_at)}</span>
-            </div>
-          </div>
-          <div style="display:flex;align-items:flex-start;gap:8px">
-            <a class="btn" href="#/events">Open Events</a>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    m.innerHTML = `
-      <div class="cards">
-        <div class="card">
-          <div class="kicker">Window</div>
-          <div class="big">30 days</div>
-          <div class="label">Showing events within a month from today</div>
-        </div>
-
-        <div class="card">
-          <div class="kicker">Upcoming</div>
-          <div class="big">${events.length}</div>
-          <div class="label">Scheduled in next month</div>
-        </div>
-
-        ${events.length
-          ? `<div class="card wide"><div class="kicker">Upcoming Events</div><div style="margin-top:6px"></div>${list}</div>`
-          : `<div class="card wide"><div class="kicker">Upcoming Events</div><p class="label">No events in the next 30 days.</p></div>`
-        }
-      </div>
-    `;
-  }
-
-  /* ---------------- Small UI helpers ---------------- */
-  function loader() {
-    return `
-      <div class="cards">
-        <div class="card">
-          <div class="kicker">Loading</div>
-          <div class="big">…</div>
-          <div class="label">Fetching latest data</div>
-        </div>
-      </div>
-    `;
-  }
 }

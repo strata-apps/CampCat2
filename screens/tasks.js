@@ -32,8 +32,6 @@ export default async function TasksScreen(root) {
 
   // ---- Page head ----
   const head = div('page-head',
-    el('h1', { class: 'page-title' }, 'Tasks'),
-    el('div', { class: 'label' }, 'Create and manage your tasks.')
   );
 
   // ---- Header card matching Events (title + primary button) ----
@@ -43,19 +41,13 @@ export default async function TasksScreen(root) {
     gap: '12px', flexWrap: 'wrap'
   }},
     div(null,
-      el('div', { class: 'kicker' }, 'Tasks'),
-      el('div', { class: 'label' }, 'Create tasks and assign them to contacts.')
-    ),
-    div(null,
       el('button', { class: 'btn-primary', id: 'btnOpenNewTask' }, 'New Task')
     )
   );
 
   // ---- List card ----
   const listCard = div('card',
-    el('div', { class: 'kicker' }, 'Your Tasks'),
     el('div', { class: 'big' }, 'Open Tasks'),
-    el('div', { class: 'label', style: { marginTop: '6px' } }, 'Only tasks assigned to you are shown.')
   );
   const listWrap = el('div', { style: { marginTop: '10px' } });
   listCard.appendChild(listWrap);
@@ -66,7 +58,7 @@ export default async function TasksScreen(root) {
     el('pre', { id: 'log', class: 'label', style: { whiteSpace: 'pre-wrap', margin: 0 } }, 'Ready.')
   );
 
-  root.append(head, headerCard, listCard, logCard);
+  root.append(headerCard, listCard);
 
   // Wire "New Task" → open modal that hosts renderTasks (keeps all your logic)
   document.getElementById('btnOpenNewTask')?.addEventListener('click', openCreateTaskModal);
@@ -77,7 +69,7 @@ export default async function TasksScreen(root) {
   /* -------------------- Creator Modal (styled like Events) -------------------- */
   function openCreateTaskModal() {
     const { close, body, footer, titleEl } = buildModal('Create Task');
-    titleEl.appendChild(el('div', 'label', 'Assign to one or many contacts via filters.'));
+    titleEl.appendChild(el('div', 'label', ''));
 
     // Mount your existing creator UI inside the modal body.
     // This preserves all creation behavior & data handling you already implemented.

@@ -52,10 +52,7 @@ export default async function EventsScreen(root) {
 
   // ---------- header ----------
   const header = div({ class: 'card', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' } },
-    div(null,
-      el('div', 'kicker', 'Events'),
-      el('div', 'label', 'Create events and track attendance from your contacts list.')
-    ),
+
     div(null,
       btn('New Event', 'btn-primary', () => openCreateEventModal())
     )

@@ -51,9 +51,7 @@ export default async function ContactsScreen(root) {
 
   /* ------------------------------ shell ------------------------------ */
   const head = div(
-    'page-head',
-    el('h1', { class: 'page-title' }, 'Contacts'),
-    el('div', { class: 'label' }, 'Browse, filter, and manage contacts. Log individual calls or edit details.')
+    { style: { marginLeft: '20px' }, class: 'page-head' },
   );
 
   const bar = div(
@@ -65,12 +63,13 @@ export default async function ContactsScreen(root) {
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
+        marginTop: '16px'
       },
     },
     div(
       null,
       el('div', { class: 'kicker' }, 'Filters'),
-      el('div', { class: 'label' }, 'Use the dropdowns to narrow contacts; then export or call / edit.')
+      el('div', { class: 'label' }, 'Use the dropdowns to view a report from your database.')
     ),
     div(
       null,
@@ -108,9 +107,7 @@ export default async function ContactsScreen(root) {
 
   const listCard = div(
     'card',
-    el('div', { class: 'kicker' }, 'Directory'),
-    el('div', { class: 'big' }, 'Contacts Table'),
-    el('div', { class: 'label', style: { marginTop: '6px' } }, 'Click a first name to call or edit.')
+    el('div', { class: 'big' }, 'Contacts'),
   );
 
   // Outer wrapper with scroll buttons
@@ -179,7 +176,7 @@ export default async function ContactsScreen(root) {
     el('pre', { id: 'log', class: 'label', style: { whiteSpace: 'pre-wrap', margin: 0 } }, 'Ready.')
   );
 
-  root.append(head, bar, listCard, logCard);
+  root.append(bar, listCard);
 
   // Mount backend-driven filters
   mountContactFilters(filterRow);

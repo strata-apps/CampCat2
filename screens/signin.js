@@ -3,7 +3,7 @@ import supabase from '../supabaseClient.js';
 
 export default function SignIn(root) {
   root.innerHTML = `
-    <section class="page-head"><h1 class="page-title">Sign in</h1></section>
+    <section class="page-head" style="margin-top: 40px;"><h1 class="page-title">ReachPoint</h1></section>
     <div class="card" style="grid-column:span 12; max-width:420px; margin:0 auto;">
       <label class="label">Email</label>
       <input id="rp-email" type="email" placeholder="you@example.com"
