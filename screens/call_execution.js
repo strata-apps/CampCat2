@@ -480,12 +480,19 @@ export default async function CallExecution(root) {
     wrap.append(historyCard);
 
     try {
-      // chart-based interactions (last 365 days, click points for details)
-      await timeInteractions(historyCard, { contact_id: c.contact_id, campaign_id });
+      await timeInteractions(historyCard, {
+        contact_id: c.contact_id,
+        campaign_id,
+      });
     } catch (e) {
       console.warn('[call_execution] timeInteractions failed', e);
-      historyCard.innerHTML = `<div class="label" style="color:#b91c1c;">Could not load interaction timeline.</div>`;
+      historyCard.innerHTML = `
+        <div class="label" style="color:#b91c1c;">
+          Could not load interaction timeline.
+        </div>
+      `;
     }
+
 
 
     // Attendance (same data as Profile → Attendance tab)
@@ -648,5 +655,11 @@ export default async function CallExecution(root) {
       console.error('[call_execution] outcome save failed', e);
       alert('Could not record outcome. Please try again.');
     }
+
+    await timeInteractions(historyCard, {
+      contact_id: c.contact_id,
+      campaign_id,
+    });
+
   }
 }

@@ -127,6 +127,11 @@ export function renderCallsOverTimeLine(
 // NEW: timeInteractions — click points to view details
 // Pulls last 365 days of interactions for a contact
 // ------------------------------------------------------
+// ------------------------------------------------------
+// REPLACEMENT: timeInteractions — chart view of interaction history
+// Mirrors interactions.js behavior (single_calls + call_progress),
+// and optionally includes interactions table if present.
+// ------------------------------------------------------
 export async function timeInteractions(mount, { contact_id, campaign_id = null } = {}) {
   mount.innerHTML = `
     <div class="card wide" style="margin-top:16px;">
@@ -136,10 +141,10 @@ export async function timeInteractions(mount, { contact_id, campaign_id = null }
       </div>
 
       <div class="label" style="margin-bottom:10px; text-align:center;">
-        Click a point to view the call’s response and outcome.
+        Click a point to view details.
       </div>
 
-      <canvas id="chart-interactions" height="100"></canvas>
+      <canvas id="chart-interactions" height="110"></canvas>
 
       <div id="interaction-detail" class="card" style="grid-column:span 12; margin-top:12px; display:none;">
         <div class="label" style="font-weight:800; margin-bottom:6px;">Interaction Details</div>
@@ -152,44 +157,81 @@ export async function timeInteractions(mount, { contact_id, campaign_id = null }
   const detail = mount.querySelector('#interaction-detail');
   const detailBody = mount.querySelector('#interaction-detail-body');
 
+  const setStatus = (msg) => {
+    const label = mount.querySelector('.label');
+    if (label) label.textContent = msg;
+  };
+
   try {
     if (!window.Chart) throw new Error('Chart.js not found on window.Chart');
     if (!window.supabase) throw new Error('Supabase client not found on window.supabase');
     if (!contact_id) throw new Error('timeInteractions requires contact_id');
 
-    const since = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
     const s = window.supabase;
 
-    // --- single_calls (has response/outcome) ---
+    // Rolling window (we filter AFTER we normalize timestamps so we don’t accidentally drop rows)
+    const sinceDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+    // -----------------------------------------
+    // 1) Pull data like interactions.js does
+    // -----------------------------------------
+
+    // --- single_calls (has outcome/response/notes) ---
     let scq = s.from('single_calls')
       .select('call_time, user_id, outcome, response, notes, contact_id')
       .eq('contact_id', contact_id)
-      .gte('call_time', since)
-      .order('call_time', { ascending: true })
-      .limit(2000);
+      .order('call_time', { ascending: false })
+      .limit(500);
 
     const { data: scData, error: scErr } = await scq;
     if (scErr) throw scErr;
 
-    // --- call_progress (campaign calls; may not include response in your schema) ---
+    // --- call_progress (campaign calls) ---
     let cpq = s.from('call_progress')
       .select('campaign_id, contact_id, outcome, notes, last_called_at, update_time, call_time')
       .eq('contact_id', contact_id)
-      .limit(5000);
+      .order('update_time', { ascending: false })
+      .limit(1000);
 
     if (campaign_id) cpq = cpq.eq('campaign_id', campaign_id);
-
-    // We order by update_time if present; chart sorting will be done after normalization anyway.
-    cpq = cpq.order('update_time', { ascending: false });
 
     const { data: cpData, error: cpErr } = await cpq;
     if (cpErr) throw cpErr;
 
-    const toTime = (r) =>
-      r?.call_time || r?.last_called_at || r?.update_time || r?.at || null;
+    // -----------------------------------------
+    // 2) Optionally pull interactions (if your execution screen writes there)
+    //    Use created_at fallback because call_time is often null/missing.
+    // -----------------------------------------
+    let iData = [];
+    try {
+      let iq = s.from('interactions')
+        .select('call_time, created_at, user_id, campaign_id, contact_id')
+        .eq('contact_id', contact_id)
+        .order('created_at', { ascending: false })
+        .limit(1000);
+
+      if (campaign_id) iq = iq.eq('campaign_id', campaign_id);
+
+      const { data, error } = await iq;
+      if (!error && Array.isArray(data)) iData = data;
+    } catch (_ignored) {
+      // If table doesn't exist or schema differs, we simply skip it.
+      iData = [];
+    }
+
+    // -----------------------------------------
+    // 3) Normalize timestamps (THIS is the key difference)
+    // -----------------------------------------
+    const pickTime = (r) =>
+      r?.call_time ||
+      r?.last_called_at ||
+      r?.update_time ||
+      r?.created_at ||
+      r?.at ||
+      null;
 
     const fromSingle = (r) => ({
-      at: toTime(r),
+      at: pickTime(r),
       source: 'single_call',
       user_id: r.user_id || null,
       campaign_id: null,
@@ -199,37 +241,59 @@ export async function timeInteractions(mount, { contact_id, campaign_id = null }
     });
 
     const fromCampaign = (r) => ({
-      at: toTime(r),
+      at: pickTime(r),
       source: 'campaign_call',
       user_id: null,
       campaign_id: r.campaign_id || null,
       outcome: r.outcome || null,
-      response: null, // call_progress in your current file does not include response :contentReference[oaicite:2]{index=2}
+      response: null,
       notes: r.notes || null,
     });
 
-    // Merge + filter last 365 days
-    const merged = [
+    const fromInteraction = (r) => ({
+      at: pickTime(r),
+      source: 'interaction',
+      user_id: r.user_id || null,
+      campaign_id: r.campaign_id || null,
+      outcome: null,
+      response: null,
+      notes: null,
+    });
+
+    // Merge + filter
+    const mergedRaw = [
       ...(Array.isArray(scData) ? scData.map(fromSingle) : []),
       ...(Array.isArray(cpData) ? cpData.map(fromCampaign) : []),
-    ]
-      .filter(x => !!x.at)
-      .filter(x => new Date(x.at) >= new Date(since));
+      ...(Array.isArray(iData) ? iData.map(fromInteraction) : []),
+    ].filter(x => !!x.at);
 
+    const merged = mergedRaw.filter(x => {
+      const d = new Date(x.at);
+      return !Number.isNaN(d) && d >= sinceDate;
+    });
+
+    // Debug counters so you can see what’s feeding the chart
+    console.log('[timeInteractions] counts', {
+      single_calls: scData?.length || 0,
+      call_progress: cpData?.length || 0,
+      interactions: iData?.length || 0,
+      merged_in_window: merged.length,
+    });
+
+    // Sort oldest -> newest for an x-axis timeline
     merged.sort((a, b) => new Date(a.at) - new Date(b.at));
 
     if (!merged.length) {
-      // nothing to chart
-      mount.querySelector('.label').textContent = 'No interactions in the last 365 days.';
+      setStatus('No interactions in the last 365 days.');
       return;
     }
 
-    // Build chart points:
-    // We’ll draw "1" for each interaction (a timeline of dots connected).
+    // -----------------------------------------
+    // 4) Build chart points
+    // -----------------------------------------
     const labels = merged.map(x => formatLabel(x.at));
     const values = merged.map(() => 1);
 
-    // Create / replace existing chart safely
     if (canvas.__chart) {
       canvas.__chart.destroy();
       canvas.__chart = null;
@@ -263,7 +327,11 @@ export async function timeInteractions(mount, { contact_id, campaign_id = null }
                 const row = merged[ctx.dataIndex];
                 const out = row?.outcome ? `Outcome: ${row.outcome}` : 'Outcome: —';
                 const resp = row?.response ? `Response: ${row.response}` : 'Response: —';
-                return [out, resp];
+                const src =
+                  row?.source === 'single_call' ? 'Source: Single Call' :
+                  row?.source === 'campaign_call' ? 'Source: Campaign Call' :
+                  'Source: Interaction';
+                return [src, out, resp];
               }
             }
           }
@@ -277,22 +345,26 @@ export async function timeInteractions(mount, { contact_id, campaign_id = null }
           },
           x: { grid: { display: false } }
         },
-        // Click-to-open details
         onClick: (_evt, els) => {
           if (!els?.length) return;
           const idx = els[0].index;
           const row = merged[idx];
           if (!row) return;
 
+          const sourceLabel =
+            row.source === 'single_call' ? 'Single Call' :
+            row.source === 'campaign_call' ? 'Campaign Call' :
+            'Interaction';
+
           detail.style.display = 'block';
           detailBody.innerHTML = `
             <div><b>When:</b> ${row.at ? new Date(row.at).toLocaleString() : '—'}</div>
-            <div><b>Source:</b> ${row.source === 'single_call' ? 'Single Call' : 'Campaign Call'}</div>
+            <div><b>Source:</b> ${escapeHtml(sourceLabel)}</div>
+            <div><b>Campaign:</b> ${escapeHtml(row.campaign_id || '—')}</div>
             <div><b>Outcome:</b> ${escapeHtml(row.outcome || '—')}</div>
             <div><b>Response:</b> ${escapeHtml(row.response || '—')}</div>
             <div><b>Notes:</b> ${escapeHtml(row.notes || '—')}</div>
           `;
-          // small scroll into view if needed
           detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }
@@ -301,9 +373,10 @@ export async function timeInteractions(mount, { contact_id, campaign_id = null }
     canvas.__chart = chart;
   } catch (e) {
     console.warn('[charts] timeInteractions failed:', e);
-    mount.querySelector('.label').textContent = 'Could not load interaction timeline.';
+    setStatus('Could not load interaction timeline.');
   }
 }
+
 
 function formatLabel(iso) {
   const d = new Date(iso);
